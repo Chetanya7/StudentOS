@@ -1,7 +1,6 @@
 package com.example.studentos
 
 import android.content.Intent
-import android.content.SharedPreferences
 import android.provider.Settings
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity

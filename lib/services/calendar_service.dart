@@ -11,6 +11,13 @@ class CalendarService {
   CalendarService(this.user);
 
   Future<List<CalendarEvent>> getUpcomingEvents() async {
+    return getEventsForNextDays(days: 7, maxResults: 20);
+  }
+
+  Future<List<CalendarEvent>> getEventsForNextDays({
+    int days = 7,
+    int maxResults = 20,
+  }) async {
     try {
       final headers = await user.authHeaders;
 
@@ -23,7 +30,8 @@ class CalendarService {
       final events = await calendarApi.events.list(
         "primary",
         timeMin: now.toUtc(),
-        maxResults: 10,
+        timeMax: now.add(Duration(days: days)).toUtc(),
+        maxResults: maxResults,
         singleEvents: true,
         orderBy: "startTime",
       );

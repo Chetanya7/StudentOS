@@ -1,7 +1,9 @@
 import 'package:flutter/services.dart';
 
 class NotificationService {
-  static const MethodChannel _channel = MethodChannel('studentos/notification_service');
+  static const MethodChannel _channel = MethodChannel(
+    'studentos/notification_service',
+  );
 
   /// Returns true if notification-listener access is granted.
   Future<bool> hasPermission() async {
@@ -39,16 +41,22 @@ class NotificationService {
   }
 
   Future<void> removeEnabledApp(String packageName) async {
-    await _channel.invokeMethod('removeEnabledApp', {'packageName': packageName});
+    await _channel.invokeMethod('removeEnabledApp', {
+      'packageName': packageName,
+    });
   }
 
   Future<List<String>> getWhatsappPeopleWhitelist() async {
-    final List<dynamic> values = await _channel.invokeMethod('getWhatsappPeopleWhitelist');
+    final List<dynamic> values = await _channel.invokeMethod(
+      'getWhatsappPeopleWhitelist',
+    );
     return values.cast<String>();
   }
 
   Future<void> setWhatsappPeopleWhitelist(List<String> values) async {
-    await _channel.invokeMethod('setWhatsappPeopleWhitelist', {'values': values});
+    await _channel.invokeMethod('setWhatsappPeopleWhitelist', {
+      'values': values,
+    });
   }
 
   Future<void> addWhatsappPerson(String name) async {
@@ -60,12 +68,16 @@ class NotificationService {
   }
 
   Future<List<String>> getWhatsappGroupsWhitelist() async {
-    final List<dynamic> values = await _channel.invokeMethod('getWhatsappGroupsWhitelist');
+    final List<dynamic> values = await _channel.invokeMethod(
+      'getWhatsappGroupsWhitelist',
+    );
     return values.cast<String>();
   }
 
   Future<void> setWhatsappGroupsWhitelist(List<String> values) async {
-    await _channel.invokeMethod('setWhatsappGroupsWhitelist', {'values': values});
+    await _channel.invokeMethod('setWhatsappGroupsWhitelist', {
+      'values': values,
+    });
   }
 
   Future<void> addWhatsappGroup(String name) async {
