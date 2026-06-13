@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/intl.dart';
 
+import '../features/notification_reading/service/notification_service.dart';
 import '../features/smart_scheduling/models/smart_schedule_recommendation.dart';
 import '../features/smart_scheduling/service/smart_schedule_service.dart';
 import '../models/calendar_event.dart';
@@ -22,6 +23,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late Future<List<SmartScheduleRecommendation>> futureRecommendations;
   final SmartScheduleService _smartScheduleService =
       const SmartScheduleService();
+  final NotificationService _notificationService = NotificationService();
+  final Set<String> _alertedEventIds = <String>{};
 
   @override
   void initState() {
@@ -55,12 +58,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         body: TabBarView(
           children: [
-            _CalendarTab(futureEvents: futureEvents),
+            _CalendarTab(
+              futureEvents: futureEvents,
+              onEventsReady: _sendAcademicEventAlerts,
+            ),
             _SmartScheduleTab(futureRecommendations: futureRecommendations),
           ],
         ),
       ),
     );
+  }
+
+  void _sendAcademicEventAlerts(List<CalendarEvent> events) {
+    final alertEvents = events.where(_shouldAlertForEvent).toList();
+    if (alertEvents.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final event in alertEvents) {
+        final eventId = '${event.title}-${event.start.toIso8601String()}';
+        if (_alertedEventIds.contains(eventId)) {
+          continue;
+        }
+
+        _alertedEventIds.add(eventId);
+        _notificationService.showAcademicAlert(
+          title: 'Upcoming: ${event.title}',
+          message:
+              '${event.title} is ${DateFormat('EEE, dd MMM • hh:mm a').format(event.start.toLocal())}.',
+        );
+      }
+    });
+  }
+
+  bool _shouldAlertForEvent(CalendarEvent event) {
+    final academicKeywords = RegExp(
+      r'\b(quiz|exam|test|midterm|final|assignment|deadline|presentation|project|lab)\b',
+      caseSensitive: false,
+    );
+
+    return academicKeywords.hasMatch(event.title);
   }
 }
 
@@ -125,9 +161,10 @@ class _SmartScheduleSection extends StatelessWidget {
 }
 
 class _CalendarTab extends StatelessWidget {
-  const _CalendarTab({required this.futureEvents});
+  const _CalendarTab({required this.futureEvents, required this.onEventsReady});
 
   final Future<List<CalendarEvent>> futureEvents;
+  final ValueChanged<List<CalendarEvent>> onEventsReady;
 
   @override
   Widget build(BuildContext context) {
@@ -145,6 +182,7 @@ class _CalendarTab extends StatelessWidget {
           }
 
           final events = snapshot.data ?? [];
+          onEventsReady(events);
 
           return ListView(
             children: [

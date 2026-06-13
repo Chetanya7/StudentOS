@@ -87,4 +87,14 @@ class NotificationService {
   Future<void> removeWhatsappGroup(String name) async {
     await _channel.invokeMethod('removeWhatsappGroup', {'name': name});
   }
+
+  Future<void> showAcademicAlert({
+    required String title,
+    required String message,
+  }) async {
+    await _channel.invokeMethod('showAcademicAlert', {
+      'title': title,
+      'message': message,
+    });
+  }
 }
