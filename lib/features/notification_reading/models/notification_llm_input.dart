@@ -46,6 +46,8 @@ class NotificationLlmInputPayload {
     this.conversationTitle,
     this.summary,
     this.timeZone,
+    this.currentDateTime,
+    this.currentDate,
   });
 
   /// Android package name such as `com.whatsapp`.
@@ -77,6 +79,8 @@ class NotificationLlmInputPayload {
   /// Optional context that can help the model reason about the time window.
   final String? summary;
   final String? timeZone;
+  final String? currentDateTime;
+  final String? currentDate;
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
@@ -86,16 +90,23 @@ class NotificationLlmInputPayload {
       'postTime': postTime,
       if (channelId != null) 'channelId': channelId,
       if (category != null) 'category': category,
-      if (rawNotificationTitle != null) 'rawNotificationTitle': rawNotificationTitle,
-      if (rawNotificationText != null) 'rawNotificationText': rawNotificationText,
-      if (isGroupConversation != null) 'isGroupConversation': isGroupConversation,
+      if (rawNotificationTitle != null)
+        'rawNotificationTitle': rawNotificationTitle,
+      if (rawNotificationText != null)
+        'rawNotificationText': rawNotificationText,
+      if (isGroupConversation != null)
+        'isGroupConversation': isGroupConversation,
       if (senderName != null) 'senderName': senderName,
       if (messageText != null) 'messageText': messageText,
       if (conversationTitle != null) 'conversationTitle': conversationTitle,
       if (summary != null) 'summary': summary,
       if (timeZone != null) 'timeZone': timeZone,
+      if (currentDateTime != null) 'currentDateTime': currentDateTime,
+      if (currentDate != null) 'currentDate': currentDate,
       'extras': extras,
-      'actions': actions.map((NotificationActionContext action) => action.toJson()).toList(),
+      'actions': actions
+          .map((NotificationActionContext action) => action.toJson())
+          .toList(),
     };
   }
 
@@ -116,12 +127,19 @@ class NotificationLlmInputPayload {
       conversationTitle: json['conversationTitle']?.toString(),
       summary: json['summary']?.toString(),
       timeZone: json['timeZone']?.toString(),
+      currentDateTime: json['currentDateTime']?.toString(),
+      currentDate: json['currentDate']?.toString(),
       extras: _readMap(json['extras']),
       actions: actionsJson is List
           ? actionsJson
-              .whereType<Map>()
-              .map((Map<dynamic, dynamic> item) => NotificationActionContext.fromJson(item.cast<String, dynamic>()))
-              .toList()
+                .whereType<Map>()
+                .map(
+                  (Map<dynamic, dynamic> item) =>
+                      NotificationActionContext.fromJson(
+                        item.cast<String, dynamic>(),
+                      ),
+                )
+                .toList()
           : <NotificationActionContext>[],
     );
   }
@@ -138,11 +156,61 @@ class NotificationLlmInputPayload {
     return <String, dynamic>{};
   }
 
+  Map<String, dynamic> toPromptJson() {
+    final values = <String, Object?>{
+      'appPackageName': appPackageName,
+      'appLabel': appLabel,
+      'notificationKey': notificationKey,
+      'postTime': postTime,
+      'currentDate': currentDate,
+      'currentDateTime': currentDateTime,
+      'timeZone': timeZone,
+      'rawNotificationTitle': rawNotificationTitle,
+      'rawNotificationText': rawNotificationText,
+      'conversationTitle': conversationTitle,
+      'messageText': messageText,
+      'senderName': senderName,
+      'isGroupConversation': isGroupConversation,
+    };
+
+    final seenValues = <String>{};
+    final compact = <String, dynamic>{};
+
+    for (final entry in values.entries) {
+      final value = entry.value;
+      if (value == null) {
+        continue;
+      }
+
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) {
+          continue;
+        }
+
+        final normalized = trimmed.toLowerCase();
+        if (seenValues.contains(normalized)) {
+          continue;
+        }
+
+        seenValues.add(normalized);
+        compact[entry.key] = trimmed;
+        continue;
+      }
+
+      compact[entry.key] = value;
+    }
+
+    return compact;
+  }
+
   NotificationExtractionResult buildExpectedEventSkeleton() {
     return NotificationExtractionResult(
       type: NotificationExtractionType.event,
       startDateTime: DateTime.fromMillisecondsSinceEpoch(postTime),
-      endDateTime: DateTime.fromMillisecondsSinceEpoch(postTime),
+      endDateTime: DateTime.fromMillisecondsSinceEpoch(
+        postTime,
+      ).add(const Duration(hours: 1)),
       isRepeating: false,
       summary: summary,
       timeZone: timeZone,

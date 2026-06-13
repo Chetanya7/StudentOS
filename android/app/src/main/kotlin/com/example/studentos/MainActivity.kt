@@ -46,6 +46,11 @@ class MainActivity : FlutterActivity() {
 					result.success(!dontAsk && !granted)
 				}
 				"getEnabledApps" -> result.success(NotificationFilterStore.getEnabledApps(this).toList())
+				"drainPendingNotificationPayloads" -> {
+					val payloads = PendingNotificationStore.drain(this)
+					Log.i("MainActivity", "Drained pending notification payloads: $payloads")
+					result.success(payloads)
+				}
 				"setEnabledApps" -> {
 					val apps = call.argument<List<String>>("apps")?.toSet().orEmpty()
 					NotificationFilterStore.setEnabledApps(this, apps)

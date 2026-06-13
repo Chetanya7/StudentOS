@@ -1,7 +1,4 @@
-enum NotificationExtractionType {
-  event,
-  other,
-}
+enum NotificationExtractionType { event, other }
 
 extension NotificationExtractionTypeJson on NotificationExtractionType {
   String toJsonValue() {
@@ -25,10 +22,7 @@ extension NotificationExtractionTypeJson on NotificationExtractionType {
 }
 
 class RepeatEncoding {
-  const RepeatEncoding({
-    required this.format,
-    required this.value,
-  });
+  const RepeatEncoding({required this.format, required this.value});
 
   /// Suggested values: `rrule`, `cron`, or `human`.
   final String format;
@@ -37,10 +31,7 @@ class RepeatEncoding {
   final String value;
 
   Map<String, dynamic> toJson() {
-    return <String, dynamic>{
-      'format': format,
-      'value': value,
-    };
+    return <String, dynamic>{'format': format, 'value': value};
   }
 
   factory RepeatEncoding.fromJson(Map<String, dynamic> json) {
@@ -54,54 +45,63 @@ class RepeatEncoding {
 class NotificationExtractionResult {
   const NotificationExtractionResult({
     required this.type,
-    required this.startDateTime,
-    required this.endDateTime,
     required this.isRepeating,
+    this.startDateTime,
+    this.endDateTime,
     this.repeat,
     this.summary,
     this.timeZone,
+    this.nonEventReason,
   });
 
-  /// The current contract is `event`; the enum leaves room for future types.
   final NotificationExtractionType type;
 
   /// ISO 8601 datetime string, ideally with timezone offset.
-  final DateTime startDateTime;
+  final DateTime? startDateTime;
 
   /// ISO 8601 datetime string, ideally with timezone offset.
-  final DateTime endDateTime;
+  final DateTime? endDateTime;
 
   final bool isRepeating;
   final RepeatEncoding? repeat;
   final String? summary;
   final String? timeZone;
+  final String? nonEventReason;
+
+  bool get canCreateCalendarEvent {
+    return type == NotificationExtractionType.event && startDateTime != null;
+  }
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'type': type.toJsonValue(),
-      'startDateTime': startDateTime.toIso8601String(),
-      'endDateTime': endDateTime.toIso8601String(),
+      'startDateTime': startDateTime?.toIso8601String(),
+      'endDateTime': endDateTime?.toIso8601String(),
       'isRepeating': isRepeating,
       if (repeat != null) 'repeat': repeat!.toJson(),
       if (summary != null) 'summary': summary,
       if (timeZone != null) 'timeZone': timeZone,
+      if (nonEventReason != null) 'nonEventReason': nonEventReason,
     };
   }
 
   factory NotificationExtractionResult.fromJson(Map<String, dynamic> json) {
     final repeatJson = json['repeat'];
     return NotificationExtractionResult(
-      type: NotificationExtractionTypeJson.fromJsonValue(json['type']?.toString()),
-      startDateTime: DateTime.parse(json['startDateTime'].toString()),
-      endDateTime: DateTime.parse(json['endDateTime'].toString()),
+      type: NotificationExtractionTypeJson.fromJsonValue(
+        json['type']?.toString(),
+      ),
+      startDateTime: DateTime.tryParse(json['startDateTime']?.toString() ?? ''),
+      endDateTime: DateTime.tryParse(json['endDateTime']?.toString() ?? ''),
       isRepeating: json['isRepeating'] == true,
       repeat: repeatJson is Map<String, dynamic>
           ? RepeatEncoding.fromJson(repeatJson)
           : repeatJson is Map
-              ? RepeatEncoding.fromJson(repeatJson.cast<String, dynamic>())
-              : null,
+          ? RepeatEncoding.fromJson(repeatJson.cast<String, dynamic>())
+          : null,
       summary: json['summary']?.toString(),
       timeZone: json['timeZone']?.toString(),
+      nonEventReason: json['nonEventReason']?.toString(),
     );
   }
 }

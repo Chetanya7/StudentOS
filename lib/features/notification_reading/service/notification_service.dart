@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
+
+import '../models/notification_llm_input.dart';
 
 class NotificationService {
   static const MethodChannel _channel = MethodChannel(
@@ -30,6 +34,23 @@ class NotificationService {
   Future<List<String>> getEnabledApps() async {
     final List<dynamic> values = await _channel.invokeMethod('getEnabledApps');
     return values.cast<String>();
+  }
+
+  Future<List<NotificationLlmInputPayload>> drainPendingNotifications() async {
+    final String source = await _channel.invokeMethod(
+      'drainPendingNotificationPayloads',
+    );
+    final List<dynamic> values = source.isEmpty
+        ? <dynamic>[]
+        : jsonDecode(source);
+    return values
+        .whereType<Map>()
+        .map(
+          (value) => NotificationLlmInputPayload.fromJson(
+            value.cast<String, dynamic>(),
+          ),
+        )
+        .toList();
   }
 
   Future<void> setEnabledApps(List<String> apps) async {

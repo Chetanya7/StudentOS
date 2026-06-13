@@ -53,4 +53,28 @@ class CalendarService {
       return [];
     }
   }
+
+  Future<void> createEvent({
+    required String title,
+    required DateTime start,
+    DateTime? end,
+    String? description,
+    String? timeZone,
+  }) async {
+    final headers = await user.authHeaders;
+    final client = AuthenticatedClient(headers);
+    final calendarApi = CalendarApi(client);
+
+    final event = Event(
+      summary: title,
+      description: description,
+      start: EventDateTime(dateTime: start, timeZone: timeZone),
+      end: EventDateTime(
+        dateTime: end ?? start.add(const Duration(hours: 1)),
+        timeZone: timeZone,
+      ),
+    );
+
+    await calendarApi.events.insert(event, "primary");
+  }
 }

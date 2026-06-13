@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/intl.dart';
 
+import '../features/chat/models/chat_message.dart';
+import '../features/chat/service/calendar_chat_service.dart';
+import '../features/notification_reading/models/notification_extraction.dart';
 import '../features/notification_reading/service/notification_service.dart';
+import '../features/notification_reading/service/notification_ai_extraction_service.dart';
 import '../features/smart_scheduling/models/smart_schedule_recommendation.dart';
 import '../features/smart_scheduling/service/smart_schedule_service.dart';
 import '../models/calendar_event.dart';
@@ -24,7 +30,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final SmartScheduleService _smartScheduleService =
       const SmartScheduleService();
   final NotificationService _notificationService = NotificationService();
+  final NotificationAiExtractionService _notificationAiExtractionService =
+      const NotificationAiExtractionService();
   final Set<String> _alertedEventIds = <String>{};
+  Timer? _pendingNotificationTimer;
+  bool _isProcessingPendingNotifications = false;
 
   @override
   void initState() {
@@ -37,12 +47,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
     futureRecommendations = futureEvents.then(
       (events) => _smartScheduleService.getRecommendations(events: events),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _processPendingNotificationEvents();
+    });
+    _pendingNotificationTimer = Timer.periodic(const Duration(seconds: 10), (
+      _,
+    ) {
+      _processPendingNotificationEvents();
+    });
+  }
+
+  @override
+  void dispose() {
+    _pendingNotificationTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _processPendingNotificationEvents() async {
+    if (_isProcessingPendingNotifications) return;
+    _isProcessingPendingNotifications = true;
+
+    try {
+      final payloads = await _notificationService.drainPendingNotifications();
+      debugPrint('Drained ${payloads.length} pending notification payload(s).');
+      if (payloads.isEmpty) return;
+
+      var createdCount = 0;
+      for (final payload in payloads) {
+        debugPrint(
+          'Processing notification payload: ${payload.appPackageName} title="${payload.rawNotificationTitle}" text="${payload.rawNotificationText}"',
+        );
+        final extraction = await _notificationAiExtractionService.extract(
+          payload,
+        );
+        debugPrint('Notification extraction result: ${extraction.toJson()}');
+
+        if (!extraction.canCreateCalendarEvent) {
+          debugPrint(
+            'Notification did not become an event: ${extraction.nonEventReason ?? extraction.type.toJsonValue()}',
+          );
+          continue;
+        }
+
+        await calendarService.createEvent(
+          title: extraction.summary ?? payload.summary ?? 'Untitled event',
+          start: extraction.startDateTime!,
+          end: extraction.endDateTime,
+          description:
+              'Created from ${payload.appLabel ?? payload.appPackageName} notification.',
+          timeZone: extraction.timeZone ?? payload.timeZone,
+        );
+        debugPrint(
+          'Created calendar event from notification: ${extraction.summary ?? payload.summary ?? 'Untitled event'}',
+        );
+        createdCount++;
+      }
+
+      if (!mounted || createdCount == 0) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Created $createdCount calendar event(s).')),
+      );
+
+      setState(() {
+        futureEvents = calendarService.getEventsForNextDays(
+          days: 7,
+          maxResults: 30,
+        );
+        futureRecommendations = futureEvents.then(
+          (events) => _smartScheduleService.getRecommendations(events: events),
+        );
+      });
+    } finally {
+      _isProcessingPendingNotifications = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(title: const Text("StudentOS")),
         bottomNavigationBar: Material(
@@ -52,6 +136,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               tabs: [
                 Tab(icon: Icon(Icons.event), text: 'Calendar'),
                 Tab(icon: Icon(Icons.auto_awesome), text: 'Smart Schedule'),
+                Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Chat'),
               ],
             ),
           ),
@@ -63,6 +148,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               onEventsReady: _sendAcademicEventAlerts,
             ),
             _SmartScheduleTab(futureRecommendations: futureRecommendations),
+            _ChatTab(futureEvents: futureEvents),
           ],
         ),
       ),
@@ -307,6 +393,199 @@ class _EventCard extends StatelessWidget {
         subtitle: Text(
           DateFormat('EEE, dd MMM • hh:mm a').format(event.start.toLocal()),
         ),
+      ),
+    );
+  }
+}
+
+class _ChatTab extends StatefulWidget {
+  const _ChatTab({required this.futureEvents});
+
+  final Future<List<CalendarEvent>> futureEvents;
+
+  @override
+  State<_ChatTab> createState() => _ChatTabState();
+}
+
+class _ChatTabState extends State<_ChatTab> {
+  final CalendarChatService _chatService = const CalendarChatService();
+  final TextEditingController _questionController = TextEditingController();
+  final List<ChatMessage> _messages = <ChatMessage>[];
+  late Future<String> _summaryFuture;
+  List<CalendarEvent> _events = const <CalendarEvent>[];
+  bool _isAnswering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _summaryFuture = widget.futureEvents.then((events) {
+      _events = events;
+      return _chatService.summarizeSchedule(events: events);
+    });
+  }
+
+  @override
+  void dispose() {
+    _questionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _askQuestion() async {
+    final question = _questionController.text.trim();
+    if (question.isEmpty || _isAnswering) return;
+
+    setState(() {
+      _questionController.clear();
+      _isAnswering = true;
+      _messages.add(ChatMessage(role: ChatMessageRole.user, text: question));
+    });
+
+    final answer = await _chatService.answerQuestion(
+      question: question,
+      events: _events,
+      history: _messages,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _messages.add(ChatMessage(role: ChatMessageRole.assistant, text: answer));
+      _isAnswering = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Expanded(
+            child: FutureBuilder<String>(
+              future: _summaryFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+
+                return ListView(
+                  children: [
+                    _ScheduleSummaryCard(
+                      summary: snapshot.data ?? 'No summary available.',
+                    ),
+                    const SizedBox(height: 12),
+                    if (_messages.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text('Ask anything about your schedule.'),
+                        ),
+                      )
+                    else
+                      ..._messages.map(
+                        (message) => _ChatBubble(message: message),
+                      ),
+                    if (_isAnswering)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: LinearProgressIndicator(),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _questionController,
+                  minLines: 1,
+                  maxLines: 3,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _askQuestion(),
+                  decoration: const InputDecoration(
+                    hintText: 'Ask about your week...',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: _isAnswering ? null : _askQuestion,
+                icon: const Icon(Icons.send),
+                tooltip: 'Send',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleSummaryCard extends StatelessWidget {
+  const _ScheduleSummaryCard({required this.summary});
+
+  final String summary;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.summarize),
+                const SizedBox(width: 8),
+                Text(
+                  'Schedule summary',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(summary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatBubble extends StatelessWidget {
+  const _ChatBubble({required this.message});
+
+  final ChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.role == ChatMessageRole.user;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 320),
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isUser
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(message.text),
       ),
     );
   }

@@ -5,6 +5,9 @@ import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
+import java.time.OffsetDateTime
 import java.util.TreeSet
 
 class NotificationReaderService : NotificationListenerService() {
@@ -21,6 +24,9 @@ class NotificationReaderService : NotificationListenerService() {
                 return
             }
 
+            val payload = buildLlmPayload(sbn)
+            PendingNotificationStore.add(this, payload)
+            Log.i(TAG, "Queued notification payload for AI extraction: ${payload.optString("notificationKey")}")
             Log.i(TAG, dumpStatusBarNotification(sbn))
         } catch (e: Exception) {
             Log.e(TAG, "Error reading notification", e)
@@ -33,6 +39,88 @@ class NotificationReaderService : NotificationListenerService() {
             Log.i(TAG, "Removed from: $pkg")
         } catch (e: Exception) {
             Log.e(TAG, "Error in onNotificationRemoved", e)
+        }
+    }
+
+    private fun buildLlmPayload(sbn: StatusBarNotification): JSONObject {
+        val notification = sbn.notification
+        val extras = notification.extras
+        val whatsappConversation = if (sbn.packageName == NotificationFilterStore.WHATSAPP_PACKAGE) {
+            WhatsAppNotificationParser.parse(sbn)
+        } else {
+            null
+        }
+
+        val payload = JSONObject()
+        payload.put("appPackageName", sbn.packageName)
+        payload.put("appLabel", appLabelForPackage(sbn.packageName))
+        payload.put("notificationKey", sbn.key)
+        payload.put("postTime", sbn.postTime)
+        payload.put("channelId", notification.channelId)
+        payload.put("category", notification.category)
+        payload.put("rawNotificationTitle", extras.getCharSequence("android.title")?.toString())
+        payload.put("rawNotificationText", extras.getCharSequence("android.text")?.toString())
+        payload.put("summary", extras.getCharSequence("android.title")?.toString())
+        payload.put("timeZone", java.util.TimeZone.getDefault().id)
+        val currentDateTime = OffsetDateTime.now()
+        payload.put("currentDateTime", currentDateTime.toString())
+        payload.put("currentDate", currentDateTime.toLocalDate().toString())
+        payload.put("extras", bundleToJson(extras))
+        payload.put("actions", actionsToJson(notification))
+
+        if (whatsappConversation != null) {
+            payload.put("isGroupConversation", whatsappConversation.isGroupConversation)
+            payload.put("senderName", whatsappConversation.senderName)
+            payload.put("messageText", whatsappConversation.messageText)
+            payload.put("conversationTitle", whatsappConversation.conversationTitle)
+        }
+
+        return payload
+    }
+
+    private fun appLabelForPackage(packageName: String): String? {
+        return try {
+            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(applicationInfo).toString()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun actionsToJson(notification: Notification): JSONArray {
+        val array = JSONArray()
+        notification.actions?.forEach { action ->
+            val item = JSONObject()
+            item.put("title", action.title?.toString())
+            item.put("hasRemoteInputs", !action.remoteInputs.isNullOrEmpty())
+            item.put("intentDescription", action.actionIntent?.toString())
+            array.put(item)
+        }
+        return array
+    }
+
+    private fun bundleToJson(bundle: Bundle): JSONObject {
+        val json = JSONObject()
+        for (key in bundle.keySet()) {
+            json.put(key, jsonValue(bundle.get(key)))
+        }
+        return json
+    }
+
+    private fun jsonValue(value: Any?): Any? {
+        return when (value) {
+            null -> JSONObject.NULL
+            is CharSequence -> value.toString()
+            is Number -> value
+            is Boolean -> value
+            is Bundle -> bundleToJson(value)
+            is Array<*> -> JSONArray(value.map { jsonValue(it) })
+            is IntArray -> JSONArray(value.toList())
+            is LongArray -> JSONArray(value.toList())
+            is BooleanArray -> JSONArray(value.toList())
+            is FloatArray -> JSONArray(value.toList())
+            is DoubleArray -> JSONArray(value.toList())
+            else -> value.toString()
         }
     }
 

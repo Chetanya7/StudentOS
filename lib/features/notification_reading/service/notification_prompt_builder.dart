@@ -4,7 +4,7 @@ class NotificationPromptBuilder {
   const NotificationPromptBuilder();
 
   String buildStrictExtractionPrompt(NotificationLlmInputPayload payload) {
-    final String payloadJson = _prettyJson(payload.toJson());
+    final String payloadJson = _prettyJson(payload.toPromptJson());
 
     final lines = <String>[
       'You are an information extraction engine.',
@@ -21,6 +21,8 @@ class NotificationPromptBuilder {
       '- Do not wrap the JSON in code fences.',
       '- Use the exact keys defined below.',
       '- If a field is unknown, set it to null.',
+      '- If type is "other", set all event-specific fields to null and explain in nonEventReason.',
+      '- For event notifications, you must resolve relative dates into concrete ISO-8601 datetimes when currentDate/currentDateTime is provided.',
       '- If isRepeating is true, provide a repeat object.',
       '- Prefer RFC 5545 RRULE encoding in repeat.value when possible.',
       '',
@@ -35,13 +37,17 @@ class NotificationPromptBuilder {
       '    "value": "string"',
       '  } | null,',
       '  "summary": "string or null",',
-      '  "timeZone": "string or null"',
+      '  "timeZone": "string or null",',
+      '  "nonEventReason": "string or null"',
       '}',
       '',
       'Interpretation rules:',
       '- Treat only explicit or strongly implied event details as valid event data.',
+      '- Use currentDate, currentDateTime, and timeZone to resolve relative dates like "tomorrow", "today", or "next Monday".',
+      '- Example: if currentDate is 2026-06-14 and text says "tomorrow 18:30 to 19:20", startDateTime should be 2026-06-15T18:30:00 with the provided timezone/offset.',
       '- Use the notification context to infer date, time, duration, and recurrence.',
       '- If you cannot determine a field reliably, use null.',
+      '- If a notification is only a normal chat, status update, or reminder with no schedulable event/task, return type "other".',
       '- For repeating events, encode the recurrence pattern in repeat.',
       '- For one-time events, set isRepeating to false and repeat to null.',
       '',

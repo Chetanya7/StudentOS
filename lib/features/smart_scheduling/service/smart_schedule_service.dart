@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../../../models/calendar_event.dart';
+import '../../../services/hugging_face_config.dart';
 import '../models/smart_schedule_recommendation.dart';
 
 class SmartScheduleService {
@@ -99,9 +100,10 @@ ${const JsonEncoder.withIndent('  ').convert(payload)}
   }) async {
     final env = _loadedEnv();
     final modelUrl = env['HF_MODEL_URL']?.trim() ?? '';
+    final modelId = HuggingFaceConfig.modelId(modelUrl);
     final token = env['HF_TOKEN']?.trim() ?? '';
 
-    if (modelUrl.isEmpty || token.isEmpty) {
+    if (modelId == null || token.isEmpty) {
       return const [];
     }
 
@@ -111,18 +113,19 @@ ${const JsonEncoder.withIndent('  ').convert(payload)}
 
       final response = await http
           .post(
-            Uri.parse(modelUrl),
+            HuggingFaceConfig.chatCompletionsUri,
             headers: {
               'Authorization': 'Bearer $token',
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
-              'inputs': prompt,
-              'parameters': {
-                'max_new_tokens': 700,
-                'temperature': 0.2,
-                'return_full_text': false,
-              },
+              'model': '$modelId:fastest',
+              'messages': [
+                {'role': 'user', 'content': prompt},
+              ],
+              'max_tokens': 700,
+              'temperature': 0.2,
+              'stream': false,
             }),
           )
           .timeout(const Duration(seconds: 25));
@@ -156,6 +159,19 @@ ${const JsonEncoder.withIndent('  ').convert(payload)}
 
   String? _extractGeneratedText(String responseBody) {
     final decoded = jsonDecode(responseBody);
+
+    if (decoded is Map) {
+      final choices = decoded['choices'];
+      if (choices is List && choices.isNotEmpty) {
+        final first = choices.first;
+        if (first is Map) {
+          final message = first['message'];
+          if (message is Map && message['content'] != null) {
+            return message['content'].toString();
+          }
+        }
+      }
+    }
 
     if (decoded is List && decoded.isNotEmpty) {
       final first = decoded.first;
