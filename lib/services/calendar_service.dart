@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/calendar/v3.dart';
 
@@ -39,7 +40,7 @@ class CalendarService {
               .toList() ??
           [];
     } catch (e) {
-      print("Calendar Error: $e");
+      debugPrint("Calendar Error: $e");
 
       return [];
     }
