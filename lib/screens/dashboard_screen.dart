@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/intl.dart';
+import '../models/suggested_event.dart';
+import '../services/suggestion_service.dart';
 
 import '../features/chat/models/chat_message.dart';
 import '../features/chat/service/calendar_chat_service.dart';
@@ -10,6 +12,7 @@ import '../features/financials/models/financial_transaction.dart';
 import '../features/notification_reading/models/notification_extraction.dart';
 import '../features/notification_reading/service/notification_service.dart';
 import '../features/notification_reading/service/notification_ai_extraction_service.dart';
+import '../features/notification_reading/ui/whitelist_settings_screen.dart';
 import '../features/smart_scheduling/models/smart_schedule_recommendation.dart';
 import '../features/smart_scheduling/service/smart_schedule_service.dart';
 import '../models/calendar_event.dart';
@@ -33,6 +36,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final NotificationService _notificationService = NotificationService();
   final NotificationAiExtractionService _notificationAiExtractionService =
       const NotificationAiExtractionService();
+    final SuggestionService _suggestionService = SuggestionService();
   final Set<String> _alertedEventIds = <String>{};
   Timer? _pendingNotificationTimer;
   bool _isProcessingPendingNotifications = false;
@@ -73,11 +77,66 @@ class _DashboardScreenState extends State<DashboardScreen> {
       debugPrint('Drained ${payloads.length} pending notification payload(s).');
       if (payloads.isEmpty) return;
 
+      // Load WhatsApp whitelists once per scan to decide which messages to send to AI.
+      final peopleWhitelist = await _notificationService.getWhatsappPeopleWhitelist();
+      final groupsWhitelist = await _notificationService.getWhatsappGroupsWhitelist();
+
       var createdCount = 0;
       for (final payload in payloads) {
         debugPrint(
           'Processing notification payload: ${payload.appPackageName} title="${payload.rawNotificationTitle}" text="${payload.rawNotificationText}"',
         );
+
+        // If this is a WhatsApp notification, only process it if it matches
+        // the configured whitelists (either a whitelisted group or a whitelisted person).
+        final appId = payload.appPackageName.toLowerCase();
+        final appLabel = payload.appLabel?.toLowerCase() ?? '';
+        final isWhatsapp = appId.contains('whatsapp') || appLabel.contains('whatsapp');
+
+        if (isWhatsapp) {
+          var allowed = false;
+
+          final sender = payload.senderName?.trim() ?? '';
+          final conv = payload.conversationTitle?.trim() ?? '';
+
+          // Check people whitelist. Supports group-scoped entries using 'group::person'.
+          for (final entry in peopleWhitelist) {
+            if (entry.contains('::')) {
+              final parts = entry.split('::');
+              if (parts.length >= 2) {
+                final groupName = parts[0].trim();
+                final personName = parts[1].trim();
+                if (groupName.isNotEmpty && personName.isNotEmpty &&
+                    conv.isNotEmpty && sender.isNotEmpty &&
+                    groupName.toLowerCase() == conv.toLowerCase() &&
+                    personName.toLowerCase() == sender.toLowerCase()) {
+                  allowed = true;
+                  break;
+                }
+              }
+            } else {
+              if (sender.isNotEmpty && entry.trim().toLowerCase() == sender.toLowerCase()) {
+                allowed = true;
+                break;
+              }
+            }
+          }
+
+          // Check groups whitelist if not already allowed.
+          if (!allowed && conv.isNotEmpty) {
+            for (final g in groupsWhitelist) {
+              if (g.trim().toLowerCase() == conv.toLowerCase()) {
+                allowed = true;
+                break;
+              }
+            }
+          }
+
+          if (!allowed) {
+            debugPrint('Skipping WhatsApp notification from $conv / $sender (not whitelisted).');
+            continue;
+          }
+        }
         final extraction = await _notificationAiExtractionService.extract(
           payload,
         );
@@ -90,24 +149,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
           continue;
         }
 
-        await calendarService.createEvent(
-          title: extraction.summary ?? payload.summary ?? 'Untitled event',
-          start: extraction.startDateTime!,
-          end: extraction.endDateTime,
-          description:
-              'Created from ${payload.appLabel ?? payload.appPackageName} notification.',
-          timeZone: extraction.timeZone ?? payload.timeZone,
-        );
-        debugPrint(
-          'Created calendar event from notification: ${extraction.summary ?? payload.summary ?? 'Untitled event'}',
-        );
-        createdCount++;
+          // Instead of creating the calendar event immediately, add it
+          // as a suggestion so the user can accept (right-swipe) or
+          // discard (left-swipe) the suggestion in the UI.
+          final suggestion = SuggestedEvent(
+            title: extraction.summary ?? payload.summary ?? 'Untitled event',
+            start: extraction.startDateTime!,
+            end: extraction.endDateTime,
+            source: payload.appLabel ?? payload.appPackageName,
+          );
+
+          await _suggestionService.addSuggestion(suggestion);
+          debugPrint('Added suggestion from notification: ${suggestion.title}');
+          createdCount++;
       }
 
       if (!mounted || createdCount == 0) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Created $createdCount calendar event(s).')),
+        SnackBar(content: Text('Added $createdCount suggestion(s).')),
       );
 
       setState(() {
@@ -129,7 +189,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(title: const Text("StudentOS")),
+        appBar: AppBar(
+          title: const Text("StudentOS"),
+          actions: [
+            IconButton(
+              tooltip: 'Notification whitelist',
+              icon: const Icon(Icons.filter_alt),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => WhitelistSettingsScreen(
+                      notificationService: _notificationService,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
         bottomNavigationBar: Material(
           color: Theme.of(context).colorScheme.surface,
           child: const SafeArea(
@@ -144,11 +222,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         body: TabBarView(
           children: [
-            _CalendarTab(
-              futureEvents: futureEvents,
-              onEventsReady: _sendAcademicEventAlerts,
-              onOpenSmartSchedule: _openSmartSchedule,
-            ),
+                  _CalendarTab(
+                    futureEvents: futureEvents,
+                    onEventsReady: _sendAcademicEventAlerts,
+                    onOpenSmartSchedule: _openSmartSchedule,
+                    calendarService: calendarService,
+                    suggestionService: _suggestionService,
+                    onEventAdded: () {
+                      setState(() {
+                        futureEvents = calendarService.getEventsForNextDays(
+                          days: 7,
+                          maxResults: 30,
+                        );
+                        futureRecommendations = futureEvents.then(
+                          (events) => _smartScheduleService.getRecommendations(events: events),
+                        );
+                      });
+                    },
+                  ),
             _ChatTab(futureEvents: futureEvents),
             _FinancialsTab(notificationService: _notificationService),
           ],
@@ -258,16 +349,58 @@ class _SmartScheduleSection extends StatelessWidget {
   }
 }
 
-class _CalendarTab extends StatelessWidget {
+
+class _CalendarTab extends StatefulWidget {
   const _CalendarTab({
     required this.futureEvents,
     required this.onEventsReady,
     required this.onOpenSmartSchedule,
+    required this.calendarService,
+    required this.suggestionService,
+    this.onEventAdded,
+    super.key,
   });
 
   final Future<List<CalendarEvent>> futureEvents;
   final ValueChanged<List<CalendarEvent>> onEventsReady;
   final VoidCallback onOpenSmartSchedule;
+  final CalendarService calendarService;
+  final SuggestionService suggestionService;
+  final VoidCallback? onEventAdded;
+
+  @override
+  State<_CalendarTab> createState() => _CalendarTabState();
+}
+
+class _CalendarTabState extends State<_CalendarTab> {
+  List<SuggestedEvent> _suggestions = <SuggestedEvent>[];
+  bool _showingSuccess = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSuggestions();
+    widget.suggestionService.suggestionsNotifier.addListener(_onSuggestionsChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.suggestionService.suggestionsNotifier.removeListener(_onSuggestionsChanged);
+    super.dispose();
+  }
+
+  Future<void> _loadSuggestions() async {
+    _suggestions = await widget.suggestionService.getSuggestions();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _onSuggestionsChanged() {
+    if (!mounted) return;
+    setState(() {
+      _suggestions = widget.suggestionService.suggestionsNotifier.value;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +408,7 @@ class _CalendarTab extends StatelessWidget {
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: FutureBuilder<List<CalendarEvent>>(
-          future: futureEvents,
+          future: widget.futureEvents,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -286,10 +419,13 @@ class _CalendarTab extends StatelessWidget {
             }
 
             final events = snapshot.data ?? [];
-            onEventsReady(events);
+            widget.onEventsReady(events);
 
             return ListView(
               children: [
+                // Suggestions section (first)
+                _buildSuggestionsSection(),
+                const SizedBox(height: 16),
                 const Text(
                   "Upcoming Events",
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -308,10 +444,117 @@ class _CalendarTab extends StatelessWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.small(
-        onPressed: onOpenSmartSchedule,
+        onPressed: widget.onOpenSmartSchedule,
         tooltip: 'Smart Schedule',
         child: const Icon(Icons.auto_awesome),
       ),
+    );
+  }
+
+  Widget _buildSuggestionsSection() {
+    if (_showingSuccess) {
+      return Card(
+        color: Colors.green.shade100,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green),
+              SizedBox(width: 10),
+              Text(
+                "Added to Calendar",
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_suggestions.isEmpty) {
+      return const Text('No pending suggestions');
+    }
+
+    final suggestion = _suggestions.first;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Pending Suggestions",
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 10),
+        Dismissible(
+          key: Key('${suggestion.title}-${suggestion.start.toIso8601String()}'),
+          background: Container(
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.only(left: 20),
+            color: Colors.green,
+            child: const Icon(Icons.check, color: Colors.white),
+          ),
+          secondaryBackground: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            color: Colors.red,
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          onDismissed: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              // Right swipe: add to calendar
+              try {
+                await widget.calendarService.createEvent(
+                  title: suggestion.title,
+                  start: suggestion.start,
+                  end: suggestion.end,
+                  description: 'Suggested by StudentOS: ${suggestion.source}',
+                );
+
+                if (!mounted) return;
+                setState(() {
+                  _showingSuccess = true;
+                });
+
+                // Remove the suggestion from the shared service; UI will update via notifier.
+                await widget.suggestionService.removeSuggestion(suggestion);
+
+                Future.delayed(const Duration(seconds: 1), () {
+                  if (!mounted) return;
+                  setState(() {
+                    _showingSuccess = false;
+                  });
+                  widget.onEventAdded?.call();
+                });
+              } catch (e) {
+                // On error, just remove suggestion and show a snackbar
+                if (!mounted) return;
+                await widget.suggestionService.removeSuggestion(suggestion);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to add event: $e')),
+                );
+              }
+            } else {
+              // Left swipe: discard
+              if (!mounted) return;
+              await widget.suggestionService.removeSuggestion(suggestion);
+            }
+          },
+          child: Card(
+            child: ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: Text(
+                suggestion.title,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(suggestion.source),
+              trailing: Text(
+                DateFormat('EEE, dd MMM • hh:mm a').format(suggestion.start.toLocal()),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
