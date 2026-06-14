@@ -52,6 +52,35 @@ class MainActivity : FlutterActivity() {
 					result.success(payloads)
 				}
 				"getFinancialTransactions" -> result.success(FinancialTransactionStore.list(this))
+				"setFinancialTransactionReviewStatus" -> {
+					val id = call.argument<String>("id")
+					val reviewStatus = call.argument<String>("reviewStatus")
+					if (id.isNullOrBlank() || reviewStatus.isNullOrBlank()) {
+						result.error("invalid_argument", "id and reviewStatus are required", null)
+					} else {
+						result.success(FinancialTransactionStore.setReviewStatus(this, id, reviewStatus))
+					}
+				}
+				"getBudgetSettings" -> result.success(PrivateLendingStore.getBudget(this))
+				"setBudgetSettings" -> {
+					val budget = call.argument<Map<String, Any?>>("budget")
+					if (budget == null) {
+						result.error("invalid_argument", "budget is required", null)
+					} else {
+						PrivateLendingStore.setBudget(this, org.json.JSONObject(budget))
+						result.success(true)
+					}
+				}
+				"getPrivateLendingEntries" -> result.success(PrivateLendingStore.list(this))
+				"addPrivateLendingEntry" -> {
+					val entry = call.argument<Map<String, Any?>>("entry")
+					if (entry == null) {
+						result.error("invalid_argument", "entry is required", null)
+					} else {
+						PrivateLendingStore.add(this, org.json.JSONObject(entry))
+						result.success(true)
+					}
+				}
 				"setEnabledApps" -> {
 					val apps = call.argument<List<String>>("apps")?.toSet().orEmpty()
 					NotificationFilterStore.setEnabledApps(this, apps)

@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import '../../financials/models/budget_settings.dart';
 import '../../financials/models/financial_transaction.dart';
+import '../../financials/models/private_lending_entry.dart';
 import '../models/notification_llm_input.dart';
 
 class NotificationService {
@@ -69,6 +71,53 @@ class NotificationService {
         )
         .toList()
       ..sort((a, b) => b.postTime.compareTo(a.postTime));
+  }
+
+  Future<void> setFinancialTransactionReviewStatus({
+    required String id,
+    required String reviewStatus,
+  }) async {
+    await _channel.invokeMethod('setFinancialTransactionReviewStatus', {
+      'id': id,
+      'reviewStatus': reviewStatus,
+    });
+  }
+
+  Future<BudgetSettings> getBudgetSettings() async {
+    final String source = await _channel.invokeMethod('getBudgetSettings');
+    final decoded = source.isEmpty ? <String, dynamic>{} : jsonDecode(source);
+    return BudgetSettings.fromJson(
+      decoded is Map ? decoded.cast<String, dynamic>() : <String, dynamic>{},
+    );
+  }
+
+  Future<void> setBudgetSettings(BudgetSettings budget) async {
+    await _channel.invokeMethod('setBudgetSettings', {
+      'budget': budget.toJson(),
+    });
+  }
+
+  Future<List<PrivateLendingEntry>> getPrivateLendingEntries() async {
+    final String source = await _channel.invokeMethod(
+      'getPrivateLendingEntries',
+    );
+    final List<dynamic> values = source.isEmpty
+        ? <dynamic>[]
+        : jsonDecode(source);
+    return values
+        .whereType<Map>()
+        .map(
+          (value) =>
+              PrivateLendingEntry.fromJson(value.cast<String, dynamic>()),
+        )
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  Future<void> addPrivateLendingEntry(PrivateLendingEntry entry) async {
+    await _channel.invokeMethod('addPrivateLendingEntry', {
+      'entry': entry.toJson(),
+    });
   }
 
   Future<void> setEnabledApps(List<String> apps) async {
