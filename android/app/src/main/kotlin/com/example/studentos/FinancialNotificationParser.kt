@@ -2,6 +2,7 @@ package com.example.studentos
 
 import org.json.JSONObject
 import java.util.Locale
+import java.util.zip.CRC32
 
 object FinancialNotificationParser {
     private val financeKeywords = listOf(
@@ -44,7 +45,7 @@ object FinancialNotificationParser {
         }
 
         val transaction = JSONObject()
-        transaction.put("id", payload.optString("notificationKey"))
+        transaction.put("id", transactionId(payload))
         transaction.put("amount", amount)
         transaction.put("direction", direction)
         transaction.put("currency", "INR")
@@ -54,6 +55,15 @@ object FinancialNotificationParser {
         transaction.put("message", payload.optString("rawNotificationText"))
         transaction.put("postTime", payload.optLong("postTime"))
         return transaction
+    }
+
+    private fun transactionId(payload: JSONObject): String {
+        val key = payload.optString("notificationKey")
+        val postTime = payload.optLong("postTime")
+        val message = payload.optString("rawNotificationText")
+        val checksum = CRC32()
+        checksum.update(message.toByteArray(Charsets.UTF_8))
+        return "$key|$postTime|${checksum.value}"
     }
 
     private fun searchableText(payload: JSONObject): String {

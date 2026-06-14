@@ -36,4 +36,19 @@ object FinancialTransactionStore {
     fun list(context: Context): String {
         return prefs(context).getString(KEY_TRANSACTIONS, "[]") ?: "[]"
     }
+
+    fun setReviewStatus(context: Context, id: String, reviewStatus: String): Boolean {
+        val transactions = JSONArray(prefs(context).getString(KEY_TRANSACTIONS, "[]"))
+
+        for (index in 0 until transactions.length()) {
+            val transaction = transactions.optJSONObject(index)
+            if (transaction?.optString("id") == id) {
+                transaction.put("reviewStatus", reviewStatus)
+                prefs(context).edit().putString(KEY_TRANSACTIONS, transactions.toString()).apply()
+                return true
+            }
+        }
+
+        return false
+    }
 }

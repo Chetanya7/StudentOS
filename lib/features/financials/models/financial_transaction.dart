@@ -7,6 +7,7 @@ class FinancialTransaction {
     required this.sourceApp,
     required this.message,
     required this.postTime,
+    required this.reviewStatus,
     this.sender,
   });
 
@@ -17,10 +18,14 @@ class FinancialTransaction {
   final String sourceApp;
   final String message;
   final DateTime postTime;
+  final String reviewStatus;
   final String? sender;
 
   bool get isDebit => direction == 'debit';
   bool get isCredit => direction == 'credit';
+  bool get isAccepted => reviewStatus == 'accepted';
+  bool get isRejected => reviewStatus == 'rejected';
+  bool get isPending => !isAccepted && !isRejected;
 
   factory FinancialTransaction.fromJson(Map<String, dynamic> json) {
     return FinancialTransaction(
@@ -34,6 +39,7 @@ class FinancialTransaction {
       postTime: DateTime.fromMillisecondsSinceEpoch(
         int.tryParse(json['postTime']?.toString() ?? '') ?? 0,
       ),
+      reviewStatus: json['reviewStatus']?.toString() ?? 'pending',
     );
   }
 }

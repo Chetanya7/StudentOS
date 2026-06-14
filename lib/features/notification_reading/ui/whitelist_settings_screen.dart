@@ -8,7 +8,8 @@ class WhitelistSettingsScreen extends StatefulWidget {
   final NotificationService notificationService;
 
   @override
-  State<WhitelistSettingsScreen> createState() => _WhitelistSettingsScreenState();
+  State<WhitelistSettingsScreen> createState() =>
+      _WhitelistSettingsScreenState();
 }
 
 class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
@@ -27,8 +28,10 @@ class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
       _loading = true;
     });
 
-    final people = await widget.notificationService.getWhatsappPeopleWhitelist();
-    final groups = await widget.notificationService.getWhatsappGroupsWhitelist();
+    final people = await widget.notificationService
+        .getWhatsappPeopleWhitelist();
+    final groups = await widget.notificationService
+        .getWhatsappGroupsWhitelist();
 
     if (!mounted) return;
     setState(() {
@@ -50,7 +53,10 @@ class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
             decoration: const InputDecoration(hintText: 'Group name (exact)'),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(context, controller.text.trim()),
               child: const Text('Add'),
@@ -73,46 +79,58 @@ class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
         final groupController = TextEditingController();
         bool alsoAddGroup = true;
 
-        return StatefulBuilder(builder: (context, setState) {
-          return AlertDialog(
-            title: const Text('Add WhatsApp person'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: personController,
-                  decoration: const InputDecoration(hintText: "Person's name (exact)"),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: groupController,
-                  decoration: const InputDecoration(hintText: 'Optional group name'),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Checkbox(
-                      value: alsoAddGroup,
-                      onChanged: (v) => setState(() => alsoAddGroup = v ?? true),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Add WhatsApp person'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: personController,
+                    decoration: const InputDecoration(
+                      hintText: "Person's name (exact)",
                     ),
-                    const Expanded(child: Text('Also add the group to groups whitelist')),
-                  ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: groupController,
+                    decoration: const InputDecoration(
+                      hintText: 'Optional group name',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: alsoAddGroup,
+                        onChanged: (v) =>
+                            setState(() => alsoAddGroup = v ?? true),
+                      ),
+                      const Expanded(
+                        child: Text('Also add the group to groups whitelist'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, {
+                    'person': personController.text.trim(),
+                    'group': groupController.text.trim(),
+                    'alsoAddGroup': alsoAddGroup,
+                  }),
+                  child: const Text('Add'),
                 ),
               ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-              TextButton(
-                onPressed: () => Navigator.pop(context, {
-                  'person': personController.text.trim(),
-                  'group': groupController.text.trim(),
-                  'alsoAddGroup': alsoAddGroup,
-                }),
-                child: const Text('Add'),
-              ),
-            ],
-          );
-        });
+            );
+          },
+        );
       },
     );
 
@@ -195,18 +213,23 @@ class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
               padding: const EdgeInsets.all(12),
               child: ListView(
                 children: [
-                  const Text('Whitelisted groups', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Whitelisted groups',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   if (_groups.isEmpty) const Text('No groups whitelisted'),
-                  ..._groups.map((g) => Card(
-                        child: ListTile(
-                          title: Text(g),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_forever),
-                            onPressed: () => _removeGroup(g),
-                          ),
+                  ..._groups.map(
+                    (g) => Card(
+                      child: ListTile(
+                        title: Text(g),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_forever),
+                          onPressed: () => _removeGroup(g),
                         ),
-                      )),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     onPressed: _addGroup,
@@ -214,18 +237,23 @@ class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
                     label: const Text('Add group'),
                   ),
                   const SizedBox(height: 20),
-                  const Text('Whitelisted people', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Whitelisted people',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 8),
                   if (_people.isEmpty) const Text('No people whitelisted'),
-                  ..._people.map((p) => Card(
-                        child: ListTile(
-                          title: Text(_displayPerson(p)),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete_forever),
-                            onPressed: () => _removePerson(p),
-                          ),
+                  ..._people.map(
+                    (p) => Card(
+                      child: ListTile(
+                        title: Text(_displayPerson(p)),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_forever),
+                          onPressed: () => _removePerson(p),
                         ),
-                      )),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   ElevatedButton.icon(
                     onPressed: _addPerson,
