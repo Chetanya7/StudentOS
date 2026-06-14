@@ -909,13 +909,17 @@ class _FinancialsTab extends StatefulWidget {
 class _FinancialsTabState extends State<_FinancialsTab> {
   late Future<List<FinancialTransaction>> _futureTransactions;
   late Future<BudgetSettings> _futureBudget;
+  late Future<List<PrivateLendingEntry>> _futurePrivateLendingEntries;
   bool _showingTransactionSuccess = false;
+  final Set<String> _sentRunoutAlertKeys = <String>{};
 
   @override
   void initState() {
     super.initState();
     _futureTransactions = widget.notificationService.getFinancialTransactions();
     _futureBudget = widget.notificationService.getBudgetSettings();
+    _futurePrivateLendingEntries = widget.notificationService
+        .getPrivateLendingEntries();
   }
 
   void _refresh() {
@@ -923,6 +927,8 @@ class _FinancialsTabState extends State<_FinancialsTab> {
       _futureTransactions = widget.notificationService
           .getFinancialTransactions();
       _futureBudget = widget.notificationService.getBudgetSettings();
+      _futurePrivateLendingEntries = widget.notificationService
+          .getPrivateLendingEntries();
     });
   }
 
@@ -960,12 +966,29 @@ class _FinancialsTabState extends State<_FinancialsTab> {
     _refresh();
   }
 
+  Future<void> _addManualTransaction(String direction) async {
+    final transaction = await showDialog<FinancialTransaction>(
+      context: context,
+      builder: (context) =>
+          _ManualFinancialTransactionDialog(direction: direction),
+    );
+
+    if (transaction == null) return;
+
+    await widget.notificationService.addFinancialTransaction(transaction);
+    _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: FutureBuilder<List<Object>>(
-        future: Future.wait([_futureTransactions, _futureBudget]),
+        future: Future.wait([
+          _futureTransactions,
+          _futureBudget,
+          _futurePrivateLendingEntries,
+        ]),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -989,6 +1012,9 @@ class _FinancialsTabState extends State<_FinancialsTab> {
                   alertAtAmount: 0,
                   balanceBaseAmount: 0,
                 );
+          final privateLendingEntries = data.length > 2
+              ? data[2] as List<PrivateLendingEntry>
+              : const <PrivateLendingEntry>[];
           final countedTransactions = transactions
               .where((transaction) => !transaction.isRejected)
               .toList();
@@ -1012,6 +1038,16 @@ class _FinancialsTabState extends State<_FinancialsTab> {
             return sum;
           });
           final balance = budget.balanceBaseAmount + allTimeNet;
+          final moneyRunout = _calculateMoneyRunout(
+            balance: balance,
+            monthlyDebitTotal: debitTotal,
+            now: now,
+          );
+          final collectibleDues = _collectibleDues(privateLendingEntries);
+          _sendMoneyRunoutAlert(
+            runout: moneyRunout,
+            collectibleDues: collectibleDues,
+          );
 
           return RefreshIndicator(
             onRefresh: () async => _refresh(),
@@ -1024,6 +1060,7 @@ class _FinancialsTabState extends State<_FinancialsTab> {
                         label: 'Money out',
                         value: _formatMoney(debitTotal),
                         icon: Icons.arrow_upward,
+                        onTap: () => _addManualTransaction('debit'),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1032,6 +1069,7 @@ class _FinancialsTabState extends State<_FinancialsTab> {
                         label: 'Money in',
                         value: _formatMoney(creditTotal),
                         icon: Icons.arrow_downward,
+                        onTap: () => _addManualTransaction('credit'),
                       ),
                     ),
                   ],
@@ -1049,6 +1087,13 @@ class _FinancialsTabState extends State<_FinancialsTab> {
                   spent: debitTotal,
                   onTap: () => _editBudget(budget),
                 ),
+                if (moneyRunout != null && moneyRunout.daysLeft <= 3) ...[
+                  const SizedBox(height: 8),
+                  _MoneyRunoutWarningCard(
+                    runout: moneyRunout,
+                    collectibleDues: collectibleDues,
+                  ),
+                ],
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: () {
@@ -1064,6 +1109,23 @@ class _FinancialsTabState extends State<_FinancialsTab> {
                   icon: const Icon(Icons.handshake),
                   label: const Text('Private lending'),
                 ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => _TransactionHistoryScreen(
+                          transactions: countedTransactions,
+                          runout: moneyRunout,
+                          collectibleDues: collectibleDues,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.receipt_long),
+                  label: const Text('Transaction history'),
+                ),
                 const SizedBox(height: 20),
                 _buildTransactionReviewSection(pendingTransactions),
               ],
@@ -1077,6 +1139,74 @@ class _FinancialsTabState extends State<_FinancialsTab> {
   String _formatMoney(double value) {
     final sign = value < 0 ? '-' : '';
     return '$sign₹${value.abs().toStringAsFixed(2)}';
+  }
+
+  _MoneyRunout? _calculateMoneyRunout({
+    required double balance,
+    required double monthlyDebitTotal,
+    required DateTime now,
+  }) {
+    if (balance <= 0) {
+      return _MoneyRunout(
+        date: now,
+        daysLeft: 0,
+        dailySpend: monthlyDebitTotal / now.day.clamp(1, 31),
+      );
+    }
+
+    final dailySpend = monthlyDebitTotal / now.day.clamp(1, 31);
+    if (dailySpend <= 0) return null;
+
+    final daysLeft = (balance / dailySpend).floor();
+    return _MoneyRunout(
+      date: now.add(Duration(days: daysLeft)),
+      daysLeft: daysLeft,
+      dailySpend: dailySpend,
+    );
+  }
+
+  double _collectibleDues(List<PrivateLendingEntry> entries) {
+    final people = <String, double>{};
+
+    for (final entry in entries) {
+      final key =
+          '${entry.name.trim().toLowerCase()}|${entry.phoneNumber.replaceAll(RegExp(r'\s+'), '')}';
+      final delta = entry.isLent
+          ? entry.amount
+          : entry.isBorrowed
+          ? -entry.amount
+          : 0.0;
+      people[key] = (people[key] ?? 0) + delta;
+    }
+
+    return people.values
+        .where((amount) => amount > 0)
+        .fold<double>(0, (sum, amount) => sum + amount);
+  }
+
+  void _sendMoneyRunoutAlert({
+    required _MoneyRunout? runout,
+    required double collectibleDues,
+  }) {
+    if (runout == null || runout.daysLeft < 0 || runout.daysLeft > 3) return;
+
+    final key = DateFormat('yyyy-MM-dd').format(runout.date);
+    if (_sentRunoutAlertKeys.contains(key)) return;
+    _sentRunoutAlertKeys.add(key);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final runoutPhrase = runout.daysLeft == 0
+          ? 'today'
+          : 'in ${runout.daysLeft} day(s)';
+      final collectDuesText = runout.daysLeft <= 7 && collectibleDues > 0
+          ? ' You also have ₹${collectibleDues.toStringAsFixed(2)} to collect from private lending.'
+          : '';
+      widget.notificationService.showAcademicAlert(
+        title: 'Money may run out soon',
+        message:
+            'At your current spending rate, your balance may run out $runoutPhrase.$collectDuesText',
+      );
+    });
   }
 
   Future<void> _reviewTransaction(
@@ -1167,11 +1297,31 @@ class _FinancialsTabState extends State<_FinancialsTab> {
         const SizedBox(height: 10),
         _FinancialTransactionSuggestionCard(
           transaction: transaction,
+          onEditDetails: () => _editTransactionDetails(transaction),
           onReview: (reviewStatus) =>
               _reviewTransaction(transaction, reviewStatus),
         ),
       ],
     );
+  }
+
+  Future<void> _editTransactionDetails(FinancialTransaction transaction) async {
+    final details = await showDialog<_FinancialTransactionDetails>(
+      context: context,
+      builder: (context) => _FinancialTransactionDetailsDialog(
+        initialCategory: transaction.category,
+        initialDescription: transaction.description,
+      ),
+    );
+
+    if (details == null) return;
+
+    await widget.notificationService.setFinancialTransactionDetails(
+      id: transaction.id,
+      category: details.category,
+      description: details.description,
+    );
+    _refresh();
   }
 }
 
@@ -1191,11 +1341,33 @@ class _BudgetCard extends StatelessWidget {
     final progress = budget.budgetAmount <= 0
         ? 0.0
         : (spent / budget.budgetAmount).clamp(0.0, 1.0);
+    final isBudgetCrossed =
+        budget.budgetAmount > 0 && spent >= budget.budgetAmount;
+    final isAlertCrossed =
+        !isBudgetCrossed &&
+        budget.alertAtAmount > 0 &&
+        spent >= budget.alertAtAmount;
+    const overBudgetColor = Color(0xFFB3261E);
+    const alertColor = Color(0xFF9A5B00);
+    const overBudgetSurface = Color(0xFFFFEDEA);
+    const alertSurface = Color(0xFFFFF4D8);
+    final statusColor = isBudgetCrossed
+        ? overBudgetColor
+        : isAlertCrossed
+        ? alertColor
+        : null;
+    final statusSurface = isBudgetCrossed
+        ? overBudgetSurface
+        : isAlertCrossed
+        ? alertSurface
+        : null;
+    final colorScheme = Theme.of(context).colorScheme;
     final alertText = budget.alertAtAmount > 0
         ? 'Alert at ₹${budget.alertAtAmount.toStringAsFixed(2)}'
         : 'No alert amount set';
 
     return Card(
+      color: statusSurface,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
@@ -1206,7 +1378,7 @@ class _BudgetCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.savings),
+                  Icon(Icons.savings, color: statusColor),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1216,7 +1388,7 @@ class _BudgetCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const Icon(Icons.edit),
+                  Icon(Icons.edit, color: statusColor),
                 ],
               ),
               const SizedBox(height: 10),
@@ -1229,10 +1401,135 @@ class _BudgetCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 LinearProgressIndicator(value: progress),
                 const SizedBox(height: 8),
-                Text(alertText),
+                Text(
+                  isBudgetCrossed
+                      ? 'Budget crossed'
+                      : isAlertCrossed
+                      ? 'Alert amount crossed'
+                      : alertText,
+                  style: TextStyle(
+                    color: statusColor ?? colorScheme.onSurface,
+                    fontWeight: statusColor == null
+                        ? FontWeight.normal
+                        : FontWeight.w700,
+                  ),
+                ),
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MoneyRunout {
+  const _MoneyRunout({
+    required this.date,
+    required this.daysLeft,
+    required this.dailySpend,
+  });
+
+  final DateTime date;
+  final int daysLeft;
+  final double dailySpend;
+}
+
+class _MoneyRunoutCard extends StatelessWidget {
+  const _MoneyRunoutCard({required this.runout, required this.collectibleDues});
+
+  final _MoneyRunout? runout;
+  final double collectibleDues;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = runout == null
+        ? 'Runout estimate'
+        : runout!.daysLeft <= 0
+        ? 'Balance may run out today'
+        : 'Balance may last ${runout!.daysLeft} day(s)';
+    final message = runout == null
+        ? 'Add spending entries to estimate when your balance may run out.'
+        : 'Expected runout: ${DateFormat('EEE, dd MMM').format(runout!.date)} based on ₹${runout!.dailySpend.toStringAsFixed(2)}/day spending.';
+    final showDuesAdvice =
+        runout != null && runout!.daysLeft <= 7 && collectibleDues > 0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.hourglass_bottom),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(message),
+            if (showDuesAdvice) ...[
+              const SizedBox(height: 8),
+              Text(
+                'You have ₹${collectibleDues.toStringAsFixed(2)} to collect from private lending.',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MoneyRunoutWarningCard extends StatelessWidget {
+  const _MoneyRunoutWarningCard({
+    required this.runout,
+    required this.collectibleDues,
+  });
+
+  final _MoneyRunout runout;
+  final double collectibleDues;
+
+  @override
+  Widget build(BuildContext context) {
+    const warningColor = Color(0xFF9A5B00);
+    const warningSurface = Color(0xFFFFF4D8);
+    final warning = runout.daysLeft <= 0
+        ? 'Your balance may run out today.'
+        : 'Your balance may run out in ${runout.daysLeft} day(s).';
+
+    return Card(
+      color: warningSurface,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.warning_amber, color: warningColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                [
+                  warning,
+                  if (collectibleDues > 0)
+                    'Collect ₹${collectibleDues.toStringAsFixed(2)} from private lending if you can.',
+                ].join(' '),
+                style: const TextStyle(
+                  color: warningColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1387,6 +1684,135 @@ class _BalanceDialogState extends State<_BalanceDialog> {
   }
 }
 
+class _ManualFinancialTransactionDialog extends StatefulWidget {
+  const _ManualFinancialTransactionDialog({required this.direction});
+
+  final String direction;
+
+  @override
+  State<_ManualFinancialTransactionDialog> createState() =>
+      _ManualFinancialTransactionDialogState();
+}
+
+class _ManualFinancialTransactionDialogState
+    extends State<_ManualFinancialTransactionDialog> {
+  static const List<String> _categories = [
+    'Miscellaneous',
+    'Food',
+    'Transport',
+    'Stationery',
+    'Books',
+    'Fees',
+    'Hostel',
+    'Rent',
+    'Shopping',
+    'Entertainment',
+    'Health',
+    'Income',
+  ];
+
+  final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
+  String _category = 'Miscellaneous';
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final amount = double.tryParse(_amountController.text.trim());
+    if (amount == null || amount <= 0) return;
+
+    final now = DateTime.now();
+    final isDebit = widget.direction == 'debit';
+    Navigator.pop(
+      context,
+      FinancialTransaction(
+        id: 'manual-${now.microsecondsSinceEpoch}',
+        amount: amount,
+        direction: widget.direction,
+        currency: 'INR',
+        sourceApp: 'Manual entry',
+        message: _descriptionController.text.trim(),
+        postTime: now,
+        reviewStatus: 'accepted',
+        category: _category,
+        description: _descriptionController.text.trim(),
+        sender: isDebit ? 'Money out' : 'Money in',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDebit = widget.direction == 'debit';
+
+    return AlertDialog(
+      title: Text(isDebit ? 'Add money out' : 'Add money in'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _amountController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Amount',
+                prefixText: '₹',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _category,
+              decoration: const InputDecoration(
+                labelText: 'Category',
+                border: OutlineInputBorder(),
+              ),
+              items: _categories
+                  .map(
+                    (category) => DropdownMenuItem(
+                      value: category,
+                      child: Text(category),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _category = value;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _descriptionController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Description optional',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Add')),
+      ],
+    );
+  }
+}
+
 class _PrivateLendingScreen extends StatefulWidget {
   const _PrivateLendingScreen({required this.notificationService});
 
@@ -1476,7 +1902,7 @@ class _PrivateLendingScreenState extends State<_PrivateLendingScreen> {
                   ...people.map(
                     (person) => _PrivateLendingPersonCard(
                       person: person,
-                      onTap: () => _addTransactionForPerson(person),
+                      onTap: () => _openPersonProfile(person, entries),
                     ),
                   ),
               ],
@@ -1543,15 +1969,26 @@ class _PrivateLendingScreenState extends State<_PrivateLendingScreen> {
     return '${name.trim().toLowerCase()}|$normalizedPhone';
   }
 
-  Future<void> _addTransactionForPerson(_PrivateLendingPerson person) async {
-    final entry = await showDialog<PrivateLendingEntry>(
-      context: context,
-      builder: (context) => _PrivateLendingTransactionDialog(person: person),
+  Future<void> _openPersonProfile(
+    _PrivateLendingPerson person,
+    List<PrivateLendingEntry> entries,
+  ) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _PrivateLendingProfileScreen(
+          person: person,
+          entries: entries
+              .where(
+                (entry) =>
+                    _personKey(entry.name, entry.phoneNumber) ==
+                    _personKey(person.name, person.phoneNumber),
+              )
+              .toList(),
+          notificationService: widget.notificationService,
+        ),
+      ),
     );
-
-    if (entry == null) return;
-
-    await widget.notificationService.addPrivateLendingEntry(entry);
     _refresh();
   }
 }
@@ -1623,6 +2060,7 @@ class _PrivateLendingPersonDialogState
         amount: 0,
         direction: 'person',
         createdAt: DateTime.now(),
+        description: '',
       ),
     );
   }
@@ -1665,6 +2103,146 @@ class _PrivateLendingPersonDialogState
   }
 }
 
+class _PrivateLendingProfileScreen extends StatefulWidget {
+  const _PrivateLendingProfileScreen({
+    required this.person,
+    required this.entries,
+    required this.notificationService,
+  });
+
+  final _PrivateLendingPerson person;
+  final List<PrivateLendingEntry> entries;
+  final NotificationService notificationService;
+
+  @override
+  State<_PrivateLendingProfileScreen> createState() =>
+      _PrivateLendingProfileScreenState();
+}
+
+class _PrivateLendingProfileScreenState
+    extends State<_PrivateLendingProfileScreen> {
+  late List<PrivateLendingEntry> _entries;
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = List<PrivateLendingEntry>.from(widget.entries)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  Future<void> _addTransaction() async {
+    final entry = await showDialog<PrivateLendingEntry>(
+      context: context,
+      builder: (context) =>
+          _PrivateLendingTransactionDialog(person: widget.person),
+    );
+
+    if (entry == null) return;
+
+    await widget.notificationService.addPrivateLendingEntry(entry);
+    if (!mounted) return;
+
+    setState(() {
+      _entries = [entry, ..._entries]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final transactions = _entries.where((entry) => !entry.isPerson).toList();
+    final net = transactions.fold<double>(0, (sum, entry) {
+      if (entry.isLent) return sum + entry.amount;
+      if (entry.isBorrowed) return sum - entry.amount;
+      return sum;
+    });
+    final status = net > 0
+        ? 'They owe you'
+        : net < 0
+        ? 'You owe them'
+        : 'Settled';
+
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.person.name)),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addTransaction,
+        icon: const Icon(Icons.add),
+        label: const Text('Add'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
+          children: [
+            _MoneyMetricCard(
+              label: status,
+              value: _formatMoney(net),
+              icon: Icons.handshake,
+            ),
+            if (widget.person.phoneNumber.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.phone),
+                title: Text(widget.person.phoneNumber),
+              ),
+            ],
+            const SizedBox(height: 20),
+            const Text(
+              'History',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            if (transactions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text('No lend/borrow records yet.')),
+              )
+            else
+              ...transactions.map(
+                (entry) => _PrivateLendingHistoryCard(entry: entry),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatMoney(double value) {
+    final sign = value < 0 ? '-' : '';
+    return '$sign₹${value.abs().toStringAsFixed(2)}';
+  }
+}
+
+class _PrivateLendingHistoryCard extends StatelessWidget {
+  const _PrivateLendingHistoryCard({required this.entry});
+
+  final PrivateLendingEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = entry.isLent ? Colors.green : Colors.red;
+    final title = entry.isLent ? 'You lent' : 'You borrowed';
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          entry.isLent ? Icons.north_east : Icons.south_west,
+          color: color,
+        ),
+        title: Text(
+          '$title ₹${entry.amount.toStringAsFixed(2)}',
+          style: TextStyle(color: color, fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          [
+            DateFormat('EEE, dd MMM • hh:mm a').format(entry.createdAt),
+            if (entry.description.isNotEmpty) entry.description,
+          ].join(' • '),
+        ),
+      ),
+    );
+  }
+}
+
 class _PrivateLendingTransactionDialog extends StatefulWidget {
   const _PrivateLendingTransactionDialog({required this.person});
 
@@ -1678,11 +2256,13 @@ class _PrivateLendingTransactionDialog extends StatefulWidget {
 class _PrivateLendingTransactionDialogState
     extends State<_PrivateLendingTransactionDialog> {
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
   String _direction = 'lent';
 
   @override
   void dispose() {
     _amountController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -1699,6 +2279,7 @@ class _PrivateLendingTransactionDialogState
         amount: amount,
         direction: _direction,
         createdAt: DateTime.now(),
+        description: _descriptionController.text.trim(),
       ),
     );
   }
@@ -1737,6 +2318,16 @@ class _PrivateLendingTransactionDialogState
             decoration: const InputDecoration(
               labelText: 'Amount',
               prefixText: '₹',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _descriptionController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Description optional',
               border: OutlineInputBorder(),
             ),
           ),
@@ -1852,13 +2443,290 @@ class _MoneyMetricCard extends StatelessWidget {
   }
 }
 
+class _TransactionHistoryScreen extends StatefulWidget {
+  const _TransactionHistoryScreen({
+    required this.transactions,
+    required this.runout,
+    required this.collectibleDues,
+  });
+
+  final List<FinancialTransaction> transactions;
+  final _MoneyRunout? runout;
+  final double collectibleDues;
+
+  @override
+  State<_TransactionHistoryScreen> createState() =>
+      _TransactionHistoryScreenState();
+}
+
+class _TransactionHistoryScreenState extends State<_TransactionHistoryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.runout != null && widget.runout!.daysLeft <= 3) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_runoutWarningText(widget.runout!))),
+        );
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleTransactions =
+        widget.transactions
+            .where(
+              (transaction) =>
+                  !transaction.isRejected && !transaction.isPending,
+            )
+            .toList()
+          ..sort((a, b) => b.postTime.compareTo(a.postTime));
+    final spendingByCategory = <String, double>{};
+
+    for (final transaction in visibleTransactions.where(
+      (transaction) => transaction.isDebit,
+    )) {
+      final category = transaction.category.trim().isEmpty
+          ? 'Miscellaneous'
+          : transaction.category;
+      spendingByCategory[category] =
+          (spendingByCategory[category] ?? 0) + transaction.amount;
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Transaction History')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
+          children: [
+            _MoneyRunoutCard(
+              runout: widget.runout,
+              collectibleDues: widget.collectibleDues,
+            ),
+            const SizedBox(height: 8),
+            _CategorySpendingBar(spendingByCategory: spendingByCategory),
+            const SizedBox(height: 20),
+            const Text(
+              'Transactions',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            if (visibleTransactions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text('No accepted transactions yet.')),
+              )
+            else
+              ...visibleTransactions.map(
+                (transaction) =>
+                    _TransactionHistoryCard(transaction: transaction),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _runoutWarningText(_MoneyRunout runout) {
+    if (runout.daysLeft <= 0) return 'Your balance may run out today.';
+    return 'Your balance may run out in ${runout.daysLeft} day(s).';
+  }
+}
+
+class _CategorySpendingBar extends StatelessWidget {
+  const _CategorySpendingBar({required this.spendingByCategory});
+
+  final Map<String, double> spendingByCategory;
+
+  static const List<Color> _colors = [
+    Colors.blue,
+    Colors.green,
+    Colors.orange,
+    Colors.purple,
+    Colors.teal,
+    Colors.pink,
+    Colors.indigo,
+    Colors.brown,
+    Colors.cyan,
+    Colors.red,
+    Colors.amber,
+    Colors.grey,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final entries =
+        spendingByCategory.entries.where((entry) => entry.value > 0).toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+    final total = entries.fold<double>(0, (sum, entry) => sum + entry.value);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.stacked_bar_chart),
+                const SizedBox(width: 8),
+                Text(
+                  'Spending by category',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (entries.isEmpty)
+              const Text('No spending to chart yet.')
+            else ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: double.infinity,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var index = 0; index < entries.length; index++)
+                        Flexible(
+                          flex: ((entries[index].value / total) * 1000)
+                              .round()
+                              .clamp(10, 1000),
+                          fit: FlexFit.tight,
+                          child: ColoredBox(
+                            color: _colors[index % _colors.length],
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  for (var index = 0; index < entries.length; index++)
+                    _CategoryLegendItem(
+                      color: _colors[index % _colors.length],
+                      label: entries[index].key,
+                      amount: entries[index].value,
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryLegendItem extends StatelessWidget {
+  const _CategoryLegendItem({
+    required this.color,
+    required this.label,
+    required this.amount,
+  });
+
+  final Color color;
+  final String label;
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text('$label ₹${amount.toStringAsFixed(2)}'),
+      ],
+    );
+  }
+}
+
+class _TransactionHistoryCard extends StatelessWidget {
+  const _TransactionHistoryCard({required this.transaction});
+
+  final FinancialTransaction transaction;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDebit = transaction.isDebit;
+    final color = isDebit ? Colors.red : Colors.green;
+    final title = isDebit ? 'Money out' : 'Money in';
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          isDebit ? Icons.arrow_upward : Icons.arrow_downward,
+          color: color,
+        ),
+        title: Text(
+          '$title ₹${transaction.amount.toStringAsFixed(2)}',
+          style: TextStyle(color: color, fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          [
+            transaction.category,
+            if (transaction.description.isNotEmpty) transaction.description,
+            transaction.sourceApp,
+            DateFormat('EEE, dd MMM • hh:mm a').format(transaction.postTime),
+          ].join(' • '),
+        ),
+        isThreeLine:
+            transaction.description.isNotEmpty ||
+            transaction.message.isNotEmpty,
+        onTap: transaction.message.isEmpty
+            ? null
+            : () {
+                showDialog<void>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Transaction message'),
+                    content: Text(transaction.message),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+      ),
+    );
+  }
+}
+
 class _FinancialTransactionSuggestionCard extends StatelessWidget {
   const _FinancialTransactionSuggestionCard({
     required this.transaction,
+    required this.onEditDetails,
     required this.onReview,
   });
 
   final FinancialTransaction transaction;
+  final VoidCallback onEditDetails;
   final ValueChanged<String> onReview;
 
   @override
@@ -1897,6 +2765,8 @@ class _FinancialTransactionSuggestionCard extends StatelessWidget {
           ),
           subtitle: Text(
             [
+              transaction.category,
+              if (transaction.description.isNotEmpty) transaction.description,
               if (transaction.sender != null && transaction.sender!.isNotEmpty)
                 transaction.sender!,
               transaction.sourceApp,
@@ -1905,10 +2775,27 @@ class _FinancialTransactionSuggestionCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: Text(
-            DateFormat('EEE, dd MMM • hh:mm a').format(transaction.postTime),
-            style: Theme.of(context).textTheme.bodySmall,
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                DateFormat(
+                  'EEE, dd MMM • hh:mm a',
+                ).format(transaction.postTime),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              IconButton(
+                onPressed: onEditDetails,
+                icon: const Icon(Icons.edit_note),
+                tooltip: 'Add description',
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
           ),
+          isThreeLine: true,
+          contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
           onTap: transaction.message.isEmpty
               ? null
               : () {
@@ -1926,8 +2813,134 @@ class _FinancialTransactionSuggestionCard extends StatelessWidget {
                     ),
                   );
                 },
+          dense: false,
+          minVerticalPadding: 10,
+          titleAlignment: ListTileTitleAlignment.center,
+          enabled: true,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          visualDensity: VisualDensity.standard,
         ),
       ),
+    );
+  }
+}
+
+class _FinancialTransactionDetails {
+  const _FinancialTransactionDetails({
+    required this.category,
+    required this.description,
+  });
+
+  final String category;
+  final String description;
+}
+
+class _FinancialTransactionDetailsDialog extends StatefulWidget {
+  const _FinancialTransactionDetailsDialog({
+    required this.initialCategory,
+    required this.initialDescription,
+  });
+
+  final String initialCategory;
+  final String initialDescription;
+
+  @override
+  State<_FinancialTransactionDetailsDialog> createState() =>
+      _FinancialTransactionDetailsDialogState();
+}
+
+class _FinancialTransactionDetailsDialogState
+    extends State<_FinancialTransactionDetailsDialog> {
+  static const List<String> _categories = [
+    'Miscellaneous',
+    'Food',
+    'Transport',
+    'Stationery',
+    'Books',
+    'Fees',
+    'Hostel',
+    'Rent',
+    'Shopping',
+    'Entertainment',
+    'Health',
+    'Income',
+  ];
+
+  late String _category;
+  late final TextEditingController _descriptionController;
+
+  @override
+  void initState() {
+    super.initState();
+    _category = _categories.contains(widget.initialCategory)
+        ? widget.initialCategory
+        : 'Miscellaneous';
+    _descriptionController = TextEditingController(
+      text: widget.initialDescription,
+    );
+  }
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.pop(
+      context,
+      _FinancialTransactionDetails(
+        category: _category,
+        description: _descriptionController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Transaction details'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _category,
+            decoration: const InputDecoration(
+              labelText: 'Category',
+              border: OutlineInputBorder(),
+            ),
+            items: _categories
+                .map(
+                  (category) =>
+                      DropdownMenuItem(value: category, child: Text(category)),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() {
+                _category = value;
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _descriptionController,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Description optional',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
+      ],
     );
   }
 }

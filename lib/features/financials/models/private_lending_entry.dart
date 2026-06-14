@@ -6,6 +6,7 @@ class PrivateLendingEntry {
     required this.amount,
     required this.direction,
     required this.createdAt,
+    required this.description,
   });
 
   final String id;
@@ -14,6 +15,7 @@ class PrivateLendingEntry {
   final double amount;
   final String direction;
   final DateTime createdAt;
+  final String description;
 
   bool get isLent => direction == 'lent';
   bool get isBorrowed => direction == 'borrowed';
@@ -27,6 +29,7 @@ class PrivateLendingEntry {
       'amount': amount,
       'direction': direction,
       'createdAt': createdAt.millisecondsSinceEpoch,
+      'description': description,
     };
   }
 
@@ -40,6 +43,7 @@ class PrivateLendingEntry {
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         int.tryParse(json['createdAt']?.toString() ?? '') ?? 0,
       ),
+      description: json['description']?.toString() ?? '',
     );
   }
 }

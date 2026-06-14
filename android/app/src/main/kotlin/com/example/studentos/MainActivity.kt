@@ -52,6 +52,15 @@ class MainActivity : FlutterActivity() {
 					result.success(payloads)
 				}
 				"getFinancialTransactions" -> result.success(FinancialTransactionStore.list(this))
+				"addFinancialTransaction" -> {
+					val transaction = call.argument<Map<String, Any?>>("transaction")
+					if (transaction == null) {
+						result.error("invalid_argument", "transaction is required", null)
+					} else {
+						FinancialTransactionStore.add(this, org.json.JSONObject(transaction))
+						result.success(true)
+					}
+				}
 				"setFinancialTransactionReviewStatus" -> {
 					val id = call.argument<String>("id")
 					val reviewStatus = call.argument<String>("reviewStatus")
@@ -59,6 +68,16 @@ class MainActivity : FlutterActivity() {
 						result.error("invalid_argument", "id and reviewStatus are required", null)
 					} else {
 						result.success(FinancialTransactionStore.setReviewStatus(this, id, reviewStatus))
+					}
+				}
+				"setFinancialTransactionDetails" -> {
+					val id = call.argument<String>("id")
+					val category = call.argument<String>("category")
+					val description = call.argument<String>("description") ?: ""
+					if (id.isNullOrBlank() || category.isNullOrBlank()) {
+						result.error("invalid_argument", "id and category are required", null)
+					} else {
+						result.success(FinancialTransactionStore.setDetails(this, id, category, description))
 					}
 				}
 				"getBudgetSettings" -> result.success(PrivateLendingStore.getBudget(this))

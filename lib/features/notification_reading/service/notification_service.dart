@@ -73,6 +73,12 @@ class NotificationService {
       ..sort((a, b) => b.postTime.compareTo(a.postTime));
   }
 
+  Future<void> addFinancialTransaction(FinancialTransaction transaction) async {
+    await _channel.invokeMethod('addFinancialTransaction', {
+      'transaction': transaction.toJson(),
+    });
+  }
+
   Future<void> setFinancialTransactionReviewStatus({
     required String id,
     required String reviewStatus,
@@ -80,6 +86,18 @@ class NotificationService {
     await _channel.invokeMethod('setFinancialTransactionReviewStatus', {
       'id': id,
       'reviewStatus': reviewStatus,
+    });
+  }
+
+  Future<void> setFinancialTransactionDetails({
+    required String id,
+    required String category,
+    required String description,
+  }) async {
+    await _channel.invokeMethod('setFinancialTransactionDetails', {
+      'id': id,
+      'category': category,
+      'description': description,
     });
   }
 

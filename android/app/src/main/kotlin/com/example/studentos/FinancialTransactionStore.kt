@@ -51,4 +51,20 @@ object FinancialTransactionStore {
 
         return false
     }
+
+    fun setDetails(context: Context, id: String, category: String, description: String): Boolean {
+        val transactions = JSONArray(prefs(context).getString(KEY_TRANSACTIONS, "[]"))
+
+        for (index in 0 until transactions.length()) {
+            val transaction = transactions.optJSONObject(index)
+            if (transaction?.optString("id") == id) {
+                transaction.put("category", category)
+                transaction.put("description", description)
+                prefs(context).edit().putString(KEY_TRANSACTIONS, transactions.toString()).apply()
+                return true
+            }
+        }
+
+        return false
+    }
 }
