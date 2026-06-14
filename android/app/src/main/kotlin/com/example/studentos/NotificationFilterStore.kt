@@ -14,6 +14,8 @@ object NotificationFilterStore {
     const val TELEGRAM_PACKAGE = "org.telegram.messenger"
     const val OUTLOOK_PACKAGE = "com.microsoft.office.outlook"
     const val TEAMS_PACKAGE = "com.microsoft.teams"
+    const val GOOGLE_MESSAGES_PACKAGE = "com.google.android.apps.messaging"
+    const val SAMSUNG_MESSAGES_PACKAGE = "com.samsung.android.messaging"
 
     private val defaultEnabledApps = linkedSetOf(
         WHATSAPP_PACKAGE,
@@ -21,6 +23,8 @@ object NotificationFilterStore {
         TELEGRAM_PACKAGE,
         OUTLOOK_PACKAGE,
         TEAMS_PACKAGE,
+        GOOGLE_MESSAGES_PACKAGE,
+        SAMSUNG_MESSAGES_PACKAGE,
     )
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

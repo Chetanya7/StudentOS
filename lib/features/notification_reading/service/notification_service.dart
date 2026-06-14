@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import '../../financials/models/financial_transaction.dart';
 import '../models/notification_llm_input.dart';
 
 class NotificationService {
@@ -51,6 +52,23 @@ class NotificationService {
           ),
         )
         .toList();
+  }
+
+  Future<List<FinancialTransaction>> getFinancialTransactions() async {
+    final String source = await _channel.invokeMethod(
+      'getFinancialTransactions',
+    );
+    final List<dynamic> values = source.isEmpty
+        ? <dynamic>[]
+        : jsonDecode(source);
+    return values
+        .whereType<Map>()
+        .map(
+          (value) =>
+              FinancialTransaction.fromJson(value.cast<String, dynamic>()),
+        )
+        .toList()
+      ..sort((a, b) => b.postTime.compareTo(a.postTime));
   }
 
   Future<void> setEnabledApps(List<String> apps) async {

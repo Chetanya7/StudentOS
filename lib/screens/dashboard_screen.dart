@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../features/chat/models/chat_message.dart';
 import '../features/chat/service/calendar_chat_service.dart';
+import '../features/financials/models/financial_transaction.dart';
 import '../features/notification_reading/models/notification_extraction.dart';
 import '../features/notification_reading/service/notification_service.dart';
 import '../features/notification_reading/service/notification_ai_extraction_service.dart';
@@ -126,7 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(title: const Text("StudentOS")),
         bottomNavigationBar: Material(
@@ -137,6 +138,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Tab(icon: Icon(Icons.event), text: 'Calendar'),
                 Tab(icon: Icon(Icons.auto_awesome), text: 'Smart Schedule'),
                 Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Chat'),
+                Tab(icon: Icon(Icons.account_balance_wallet), text: 'Money'),
               ],
             ),
           ),
@@ -149,6 +151,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             _SmartScheduleTab(futureRecommendations: futureRecommendations),
             _ChatTab(futureEvents: futureEvents),
+            _FinancialsTab(notificationService: _notificationService),
           ],
         ),
       ),
@@ -586,6 +589,213 @@ class _ChatBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(message.text),
+      ),
+    );
+  }
+}
+
+class _FinancialsTab extends StatefulWidget {
+  const _FinancialsTab({required this.notificationService});
+
+  final NotificationService notificationService;
+
+  @override
+  State<_FinancialsTab> createState() => _FinancialsTabState();
+}
+
+class _FinancialsTabState extends State<_FinancialsTab> {
+  late Future<List<FinancialTransaction>> _futureTransactions;
+
+  @override
+  void initState() {
+    super.initState();
+    _futureTransactions = widget.notificationService.getFinancialTransactions();
+  }
+
+  void _refresh() {
+    setState(() {
+      _futureTransactions = widget.notificationService
+          .getFinancialTransactions();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: FutureBuilder<List<FinancialTransaction>>(
+        future: _futureTransactions,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          final transactions = snapshot.data ?? const <FinancialTransaction>[];
+          final debitTotal = transactions
+              .where((transaction) => transaction.isDebit)
+              .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+          final creditTotal = transactions
+              .where((transaction) => transaction.isCredit)
+              .fold<double>(0, (sum, transaction) => sum + transaction.amount);
+
+          return RefreshIndicator(
+            onRefresh: () async => _refresh(),
+            child: ListView(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MoneyMetricCard(
+                        label: 'Money out',
+                        value: _formatMoney(debitTotal),
+                        icon: Icons.arrow_upward,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _MoneyMetricCard(
+                        label: 'Money in',
+                        value: _formatMoney(creditTotal),
+                        icon: Icons.arrow_downward,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _MoneyMetricCard(
+                  label: 'Net',
+                  value: _formatMoney(creditTotal - debitTotal),
+                  icon: Icons.account_balance_wallet,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Text(
+                      'Recent transactions',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: _refresh,
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh',
+                    ),
+                  ],
+                ),
+                if (transactions.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'No bank/payment notifications found yet.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                else
+                  ...transactions.map(
+                    (transaction) =>
+                        _FinancialTransactionTile(transaction: transaction),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatMoney(double value) {
+    final sign = value < 0 ? '-' : '';
+    return '$sign₹${value.abs().toStringAsFixed(2)}';
+  }
+}
+
+class _MoneyMetricCard extends StatelessWidget {
+  const _MoneyMetricCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon),
+            const SizedBox(height: 8),
+            Text(label),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FinancialTransactionTile extends StatelessWidget {
+  const _FinancialTransactionTile({required this.transaction});
+
+  final FinancialTransaction transaction;
+
+  @override
+  Widget build(BuildContext context) {
+    final directionLabel = transaction.isDebit ? 'Spent' : 'Received';
+    final amount = '₹${transaction.amount.toStringAsFixed(2)}';
+
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          transaction.isDebit ? Icons.arrow_upward : Icons.arrow_downward,
+        ),
+        title: Text('$directionLabel $amount'),
+        subtitle: Text(
+          [
+            if (transaction.sender != null && transaction.sender!.isNotEmpty)
+              transaction.sender!,
+            transaction.sourceApp,
+            DateFormat('EEE, dd MMM • hh:mm a').format(transaction.postTime),
+          ].join(' • '),
+        ),
+        isThreeLine: transaction.message.isNotEmpty,
+        trailing: const Icon(Icons.receipt_long),
+        onTap: transaction.message.isEmpty
+            ? null
+            : () {
+                showDialog<void>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Transaction message'),
+                    content: Text(transaction.message),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              },
       ),
     );
   }

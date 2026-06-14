@@ -51,6 +51,7 @@ class MainActivity : FlutterActivity() {
 					Log.i("MainActivity", "Drained pending notification payloads: $payloads")
 					result.success(payloads)
 				}
+				"getFinancialTransactions" -> result.success(FinancialTransactionStore.list(this))
 				"setEnabledApps" -> {
 					val apps = call.argument<List<String>>("apps")?.toSet().orEmpty()
 					NotificationFilterStore.setEnabledApps(this, apps)

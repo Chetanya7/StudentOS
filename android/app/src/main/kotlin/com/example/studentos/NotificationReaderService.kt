@@ -25,8 +25,20 @@ class NotificationReaderService : NotificationListenerService() {
             }
 
             val payload = buildLlmPayload(sbn)
+            val financialTransaction = FinancialNotificationParser.parse(payload)
+            if (financialTransaction != null) {
+                FinancialTransactionStore.add(this, financialTransaction)
+                Log.i(TAG, "Stored financial transaction: $financialTransaction")
+                return
+            }
+
+            if (!StudentNotificationKeywordFilter.shouldQueueForAi(payload)) {
+                Log.i(TAG, "Skipped AI extraction for ${sbn.packageName}: ${StudentNotificationKeywordFilter.describe(payload)}")
+                return
+            }
+
             PendingNotificationStore.add(this, payload)
-            Log.i(TAG, "Queued notification payload for AI extraction: ${payload.optString("notificationKey")}")
+            Log.i(TAG, "Queued notification payload for AI extraction: ${payload.optString("notificationKey")} (${StudentNotificationKeywordFilter.describe(payload)})")
             Log.i(TAG, dumpStatusBarNotification(sbn))
         } catch (e: Exception) {
             Log.e(TAG, "Error reading notification", e)
