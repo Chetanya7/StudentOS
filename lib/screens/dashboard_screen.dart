@@ -127,7 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(title: const Text("StudentOS")),
         bottomNavigationBar: Material(
@@ -136,7 +136,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: TabBar(
               tabs: [
                 Tab(icon: Icon(Icons.event), text: 'Calendar'),
-                Tab(icon: Icon(Icons.auto_awesome), text: 'Smart Schedule'),
                 Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Chat'),
                 Tab(icon: Icon(Icons.account_balance_wallet), text: 'Money'),
               ],
@@ -148,8 +147,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _CalendarTab(
               futureEvents: futureEvents,
               onEventsReady: _sendAcademicEventAlerts,
+              onOpenSmartSchedule: _openSmartSchedule,
             ),
-            _SmartScheduleTab(futureRecommendations: futureRecommendations),
             _ChatTab(futureEvents: futureEvents),
             _FinancialsTab(notificationService: _notificationService),
           ],
@@ -186,6 +185,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     return academicKeywords.hasMatch(event.title);
+  }
+
+  void _openSmartSchedule() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            _SmartScheduleScreen(futureRecommendations: futureRecommendations),
+      ),
+    );
   }
 }
 
@@ -250,77 +259,93 @@ class _SmartScheduleSection extends StatelessWidget {
 }
 
 class _CalendarTab extends StatelessWidget {
-  const _CalendarTab({required this.futureEvents, required this.onEventsReady});
+  const _CalendarTab({
+    required this.futureEvents,
+    required this.onEventsReady,
+    required this.onOpenSmartSchedule,
+  });
 
   final Future<List<CalendarEvent>> futureEvents;
   final ValueChanged<List<CalendarEvent>> onEventsReady;
+  final VoidCallback onOpenSmartSchedule;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: FutureBuilder<List<CalendarEvent>>(
-        future: futureEvents,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<List<CalendarEvent>>(
+          future: futureEvents,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
 
-          final events = snapshot.data ?? [];
-          onEventsReady(events);
+            final events = snapshot.data ?? [];
+            onEventsReady(events);
 
-          return ListView(
-            children: [
-              const Text(
-                "Upcoming Events",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 10),
-              if (events.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: Text('No calendar events this week.')),
-                )
-              else
-                ...events.map((event) => _EventCard(event: event)),
-            ],
-          );
-        },
+            return ListView(
+              children: [
+                const Text(
+                  "Upcoming Events",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 10),
+                if (events.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: Text('No calendar events this week.')),
+                  )
+                else
+                  ...events.map((event) => _EventCard(event: event)),
+              ],
+            );
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.small(
+        onPressed: onOpenSmartSchedule,
+        tooltip: 'Smart Schedule',
+        child: const Icon(Icons.auto_awesome),
       ),
     );
   }
 }
 
-class _SmartScheduleTab extends StatelessWidget {
-  const _SmartScheduleTab({required this.futureRecommendations});
+class _SmartScheduleScreen extends StatelessWidget {
+  const _SmartScheduleScreen({required this.futureRecommendations});
 
   final Future<List<SmartScheduleRecommendation>> futureRecommendations;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: FutureBuilder<List<SmartScheduleRecommendation>>(
-        future: futureRecommendations,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+    return Scaffold(
+      appBar: AppBar(title: const Text('Smart Schedule')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<List<SmartScheduleRecommendation>>(
+          future: futureRecommendations,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(child: Text('Error: ${snapshot.error}'));
+            }
 
-          return ListView(
-            children: [
-              _SmartScheduleSection(
-                isLoading: snapshot.connectionState == ConnectionState.waiting,
-                recommendations:
-                    snapshot.data ?? const <SmartScheduleRecommendation>[],
-              ),
-            ],
-          );
-        },
+            return ListView(
+              children: [
+                _SmartScheduleSection(
+                  isLoading:
+                      snapshot.connectionState == ConnectionState.waiting,
+                  recommendations:
+                      snapshot.data ?? const <SmartScheduleRecommendation>[],
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
