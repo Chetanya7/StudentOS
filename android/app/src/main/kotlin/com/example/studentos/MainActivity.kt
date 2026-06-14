@@ -181,6 +181,24 @@ class MainActivity : FlutterActivity() {
 						result.success(true)
 					}
 				}
+				"scheduleHydrationReminders" -> {
+					val settings = call.argument<Map<String, Any?>>("settings")
+					if (settings == null) {
+						result.error("invalid_argument", "settings is required", null)
+					} else {
+						if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+							checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+						) {
+							requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1002)
+						}
+						HydrationReminderScheduler.saveSettingsAndSchedule(this, settings)
+						result.success(true)
+					}
+				}
+				"cancelHydrationReminders" -> {
+					HydrationReminderScheduler.cancel(this)
+					result.success(true)
+				}
 				else -> result.notImplemented()
 			}
 		}

@@ -20,6 +20,11 @@ import '../features/smart_scheduling/models/smart_schedule_recommendation.dart';
 import '../features/smart_scheduling/service/smart_schedule_service.dart';
 import '../models/calendar_event.dart';
 import '../services/calendar_service.dart';
+import '../features/wellbeing/service/wellbeing_service.dart';
+import '../features/wellbeing/service/hydration_service.dart';
+import '../features/wellbeing/models/hydration_models.dart';
+import '../features/wellbeing/ui/wellbeing_prompt_screen.dart';
+import '../features/wellbeing/ui/breathwork_session.dart';
 
 class DashboardScreen extends StatefulWidget {
   final GoogleSignInAccount user;
@@ -57,12 +62,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _processPendingNotificationEvents();
+      _maybeShowWellbeingPrompt();
     });
     _pendingNotificationTimer = Timer.periodic(const Duration(seconds: 10), (
       _,
     ) {
       _processPendingNotificationEvents();
     });
+  }
+
+  Future<void> _maybeShowWellbeingPrompt() async {
+    try {
+      final wellbeing = WellbeingService();
+      final should = await wellbeing.shouldPromptNow();
+      if (!mounted) return;
+      if (should) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => WellbeingPromptScreen(wellbeingService: wellbeing),
+          ),
+        );
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   @override
@@ -198,7 +222,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: const Text("StudentOS"),
@@ -243,6 +267,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               tabs: [
                 Tab(icon: Icon(Icons.event), text: 'Calendar'),
                 Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Chat'),
+                Tab(icon: Icon(Icons.self_improvement), text: 'Wellbeing'),
                 Tab(icon: Icon(Icons.account_balance_wallet), text: 'Money'),
               ],
             ),
@@ -271,6 +296,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               },
             ),
             _ChatTab(futureEvents: futureEvents),
+            _WellbeingTab(notificationService: _notificationService),
             _FinancialsTab(notificationService: _notificationService),
           ],
         ),
@@ -592,6 +618,481 @@ class _CalendarTabState extends State<_CalendarTab> {
       ],
     );
   }
+}
+
+class _WellbeingTab extends StatefulWidget {
+  const _WellbeingTab({required this.notificationService});
+
+  final NotificationService notificationService;
+
+  @override
+  State<_WellbeingTab> createState() => _WellbeingTabState();
+}
+
+class _WellbeingTabState extends State<_WellbeingTab> {
+  late final HydrationService _hydrationService;
+  late Future<HydrationSummary> _summaryFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrationService = HydrationService(
+      notificationService: widget.notificationService,
+    );
+    _summaryFuture = _hydrationService.getSummary();
+  }
+
+  void _refreshHydration() {
+    setState(() {
+      _summaryFuture = _hydrationService.getSummary();
+    });
+  }
+
+  Future<void> _addWater() async {
+    final summary = await _hydrationService.addWater();
+    if (!mounted) return;
+    _refreshHydration();
+    final complete = summary.today.amountMl >= summary.today.goalMl;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          complete
+              ? 'Hydration goal reached. Nice work.'
+              : 'Logged 250 ml. Keep the momentum going.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openHydrationSettings(HydrationSettings settings) async {
+    final updated = await showDialog<HydrationSettings>(
+      context: context,
+      builder: (context) => _HydrationSettingsDialog(settings: settings),
+    );
+    if (updated == null) return;
+    await _hydrationService.saveSettings(updated);
+    if (!mounted) return;
+    _refreshHydration();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          updated.enabled
+              ? 'Hydration reminders are on.'
+              : 'Hydration reminders are off.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: FutureBuilder<HydrationSummary>(
+        future: _summaryFuture,
+        builder: (context, snapshot) {
+          final summary = snapshot.data;
+          return RefreshIndicator(
+            onRefresh: () async => _refreshHydration(),
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  'Wellbeing',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    summary == null)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (snapshot.hasError)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.error_outline),
+                      title: const Text('Hydration unavailable'),
+                      subtitle: Text('${snapshot.error}'),
+                    ),
+                  )
+                else
+                  _HydrationCard(
+                    summary: summary!,
+                    onAddWater: _addWater,
+                    onOpenSettings: () =>
+                        _openHydrationSettings(summary.settings),
+                  ),
+                const SizedBox(height: 12),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.mood),
+                        title: const Text('Mood check-in'),
+                        subtitle: const Text('Take a moment for yourself'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          final wellbeing = WellbeingService();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => WellbeingPromptScreen(
+                                wellbeingService: wellbeing,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.self_improvement),
+                        title: const Text('Box breathing session'),
+                        subtitle: const Text('2 minutes'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BreathworkSession(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HydrationCard extends StatelessWidget {
+  const _HydrationCard({
+    required this.summary,
+    required this.onAddWater,
+    required this.onOpenSettings,
+  });
+
+  final HydrationSummary summary;
+  final VoidCallback onAddWater;
+  final VoidCallback onOpenSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = summary.settings;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.water_drop),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Smart hydration',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: settings.enabled,
+                  onChanged: (_) => onOpenSettings(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                SizedBox(
+                  width: 104,
+                  height: 104,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      CircularProgressIndicator(
+                        value: summary.progress,
+                        strokeWidth: 10,
+                      ),
+                      Center(
+                        child: Text(
+                          '${summary.percentComplete}%',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Goal: ${_formatMl(summary.today.goalMl)}'),
+                      const SizedBox(height: 6),
+                      Text('Current: ${_formatMl(summary.today.amountMl)}'),
+                      const SizedBox(height: 6),
+                      Text('Remaining: ${_formatMl(summary.remainingMl)}'),
+                      const SizedBox(height: 10),
+                      Text(
+                        settings.enabled
+                            ? 'Reminders ${_formatTime(settings.startMinutes)}-${_formatTime(settings.endMinutes)} every ${settings.frequencyMinutes} min'
+                            : 'Reminders are off',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: onAddWater,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Drank 250 ml'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onOpenSettings,
+                  icon: const Icon(Icons.tune),
+                  label: const Text('Reminder settings'),
+                ),
+              ],
+            ),
+            const Divider(height: 28),
+            Row(
+              children: [
+                Expanded(
+                  child: _HydrationMetric(
+                    label: 'Weekly avg',
+                    value: _formatMl(summary.weeklyAverageMl.round()),
+                  ),
+                ),
+                Expanded(
+                  child: _HydrationMetric(
+                    label: 'Completion',
+                    value: '${(summary.goalCompletionRate * 100).round()}%',
+                  ),
+                ),
+                Expanded(
+                  child: _HydrationMetric(
+                    label: 'Streak',
+                    value: '${summary.streakDays} d',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HydrationMetric extends StatelessWidget {
+  const _HydrationMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _HydrationSettingsDialog extends StatefulWidget {
+  const _HydrationSettingsDialog({required this.settings});
+
+  final HydrationSettings settings;
+
+  @override
+  State<_HydrationSettingsDialog> createState() =>
+      _HydrationSettingsDialogState();
+}
+
+class _HydrationSettingsDialogState extends State<_HydrationSettingsDialog> {
+  late bool _enabled;
+  late bool _soundEnabled;
+  late TimeOfDay _startTime;
+  late TimeOfDay _endTime;
+  late double _frequencyMinutes;
+  late final TextEditingController _goalController;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = widget.settings;
+    _enabled = settings.enabled;
+    _soundEnabled = settings.soundEnabled;
+    _startTime = _timeOfDay(settings.startMinutes);
+    _endTime = _timeOfDay(settings.endMinutes);
+    _frequencyMinutes = settings.frequencyMinutes.toDouble();
+    _goalController = TextEditingController(
+      text: (settings.dailyGoalMl / 1000).toStringAsFixed(1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _goalController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickStart() async {
+    final picked = await showTimePicker(context: context, initialTime: _startTime);
+    if (picked == null) return;
+    setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEnd() async {
+    final picked = await showTimePicker(context: context, initialTime: _endTime);
+    if (picked == null) return;
+    setState(() => _endTime = picked);
+  }
+
+  void _save() {
+    final goalLiters = double.tryParse(_goalController.text.trim()) ?? 2;
+    final goalMl = (goalLiters * 1000).round().clamp(250, 10000);
+    final startMinutes = _minutesOfDay(_startTime);
+    final endMinutes = _minutesOfDay(_endTime);
+
+    if (endMinutes <= startMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('End time must be after start time.')),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      HydrationSettings(
+        enabled: _enabled,
+        dailyGoalMl: goalMl,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        frequencyMinutes: _frequencyMinutes.round(),
+        soundEnabled: _soundEnabled,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Hydration reminders'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable reminders'),
+              value: _enabled,
+              onChanged: (value) => setState(() => _enabled = value),
+            ),
+            TextField(
+              controller: _goalController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Daily goal',
+                suffixText: 'liters',
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Start time'),
+              trailing: Text(_startTime.format(context)),
+              onTap: _pickStart,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('End time'),
+              trailing: Text(_endTime.format(context)),
+              onTap: _pickEnd,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Every ${_frequencyMinutes.round()} minutes'),
+              subtitle: Slider(
+                value: _frequencyMinutes,
+                min: 15,
+                max: 240,
+                divisions: 15,
+                label: '${_frequencyMinutes.round()} min',
+                onChanged: (value) =>
+                    setState(() => _frequencyMinutes = value),
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Reminder sound'),
+              value: _soundEnabled,
+              onChanged: (value) => setState(() => _soundEnabled = value),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
+}
+
+String _formatMl(int amountMl) {
+  if (amountMl >= 1000) {
+    final liters = amountMl / 1000;
+    return '${liters.toStringAsFixed(liters == liters.roundToDouble() ? 0 : 1)} L';
+  }
+  return '$amountMl ml';
+}
+
+String _formatTime(int minutes) {
+  final hour = minutes ~/ 60;
+  final minute = minutes % 60;
+  final suffix = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+  return '$displayHour:${minute.toString().padLeft(2, '0')} $suffix';
+}
+
+TimeOfDay _timeOfDay(int minutes) {
+  return TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+}
+
+int _minutesOfDay(TimeOfDay value) {
+  return value.hour * 60 + value.minute;
 }
 
 class _SmartScheduleScreen extends StatelessWidget {

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../financials/models/budget_settings.dart';
 import '../../financials/models/financial_transaction.dart';
 import '../../financials/models/private_lending_entry.dart';
+import '../../wellbeing/models/hydration_models.dart';
 import '../models/notification_llm_input.dart';
 
 class NotificationService {
@@ -202,5 +203,23 @@ class NotificationService {
       'title': title,
       'message': message,
     });
+  }
+
+  Future<void> scheduleHydrationReminders(HydrationSettings settings) async {
+    try {
+      await _channel.invokeMethod('scheduleHydrationReminders', {
+        'settings': settings.toJson(),
+      });
+    } on MissingPluginException {
+      // Hydration scheduling is currently implemented by the Android host.
+    }
+  }
+
+  Future<void> cancelHydrationReminders() async {
+    try {
+      await _channel.invokeMethod('cancelHydrationReminders');
+    } on MissingPluginException {
+      // Hydration scheduling is currently implemented by the Android host.
+    }
   }
 }
