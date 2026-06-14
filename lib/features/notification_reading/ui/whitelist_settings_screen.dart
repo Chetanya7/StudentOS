@@ -123,7 +123,7 @@ class _WhitelistSettingsScreenState extends State<WhitelistSettingsScreen> {
 
     if (person.isEmpty) return;
 
-    final entry = group.isEmpty ? person : '$group::${person}';
+    final entry = group.isEmpty ? person : '$group::$person';
     await widget.notificationService.addWhatsappPerson(entry);
 
     if (group.isNotEmpty && alsoAddGroup) {

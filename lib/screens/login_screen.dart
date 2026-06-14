@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dashboard_screen.dart';
 import '../features/notification_reading/service/notification_service.dart';
+import '../features/notification_reading/ui/app_whitelist_screen.dart';
 import '../services/google_auth_service.dart';
+import '../services/auth_state_manager.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool skipToAuth;
+
+  const LoginScreen({super.key, this.skipToAuth = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -13,6 +17,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final GoogleAuthService _authService = GoogleAuthService();
   final NotificationService _notificationService = NotificationService();
+  final AuthStateManager _authStateManager = AuthStateManager();
   bool _isSigningIn = false;
   String? _signInError;
 
@@ -20,8 +25,38 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _askForNotificationAccessIfNeeded();
+      if (widget.skipToAuth) {
+        _autoLoginWithStoredUser();
+      } else {
+        _askForNotificationAccessIfNeeded();
+      }
     });
+  }
+
+  Future<void> _autoLoginWithStoredUser() async {
+    final user = await _authStateManager.getStoredUser();
+    if (user == null || !mounted) {
+      // Stored user info is gone, show login
+      return;
+    }
+
+    try {
+      // Try to silently sign in with stored credentials
+      final signedInUser = await _authService.signIn();
+      if (!mounted) return;
+
+      if (signedInUser != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => DashboardScreen(user: signedInUser)),
+        );
+      }
+    } catch (e) {
+      // Fall back to showing login screen
+      if (mounted) {
+        _askForNotificationAccessIfNeeded();
+      }
+    }
   }
 
   Future<void> _askForNotificationAccessIfNeeded() async {
@@ -87,7 +122,39 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      Navigator.push(
+      // Save user info for persistence
+      await _authStateManager.saveUser(
+        email: user.email,
+        displayName: user.displayName ?? 'User',
+      );
+
+      if (!mounted) return;
+
+      // Check if this is first login and app whitelist setup is needed
+      final setupDone = await _authStateManager.isAppWhitelistSetupDone();
+      if (!mounted) return;
+
+      if (!setupDone) {
+        // Show app whitelist screen on first login
+        await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AppWhitelistScreen(
+              notificationService: _notificationService,
+              isFirstTime: true,
+            ),
+          ),
+        );
+
+        if (!mounted) return;
+        
+        // Mark setup as done regardless of whether they completed or skipped
+        await _authStateManager.markAppWhitelistSetupDone();
+      }
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => DashboardScreen(user: user)),
       );

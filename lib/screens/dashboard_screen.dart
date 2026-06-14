@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:intl/intl.dart';
 import '../models/suggested_event.dart';
 import '../services/suggestion_service.dart';
+import '../services/theme_service.dart';
 
 import '../features/chat/models/chat_message.dart';
 import '../features/chat/service/calendar_chat_service.dart';
@@ -12,7 +13,7 @@ import '../features/financials/models/financial_transaction.dart';
 import '../features/notification_reading/models/notification_extraction.dart';
 import '../features/notification_reading/service/notification_service.dart';
 import '../features/notification_reading/service/notification_ai_extraction_service.dart';
-import '../features/notification_reading/ui/whitelist_settings_screen.dart';
+import 'settings_screen.dart';
 import '../features/smart_scheduling/models/smart_schedule_recommendation.dart';
 import '../features/smart_scheduling/service/smart_schedule_service.dart';
 import '../models/calendar_event.dart';
@@ -192,14 +193,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
         appBar: AppBar(
           title: const Text("StudentOS"),
           actions: [
+            ValueListenableBuilder<ThemeMode>(
+              valueListenable: ThemeService().themeNotifier,
+              builder: (context, themeMode, child) {
+                final isDark = themeMode == ThemeMode.dark ||
+                    (themeMode == ThemeMode.system &&
+                        MediaQuery.of(context).platformBrightness ==
+                            Brightness.dark);
+
+                return IconButton(
+                  tooltip: isDark ? 'Light mode' : 'Dark mode',
+                  icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
+                  onPressed: () {
+                    ThemeService().toggleTheme();
+                  },
+                );
+              },
+            ),
             IconButton(
-              tooltip: 'Notification whitelist',
-              icon: const Icon(Icons.filter_alt),
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings),
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => WhitelistSettingsScreen(
+                    builder: (_) => SettingsScreen(
                       notificationService: _notificationService,
                     ),
                   ),
