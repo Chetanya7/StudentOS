@@ -139,12 +139,11 @@ object HydrationReminderScheduler {
 		}
 
 		if (!settings.optBoolean("soundEnabled", true)) {
-			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-				builder.setSilent(true)
-			} else {
-				@Suppress("DEPRECATION")
-				builder.setDefaults(0)
-			}
+			@Suppress("DEPRECATION")
+			builder
+				.setDefaults(0)
+				.setSound(null)
+				.setVibrate(null)
 		}
 
 		val notification = builder
