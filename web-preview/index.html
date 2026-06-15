@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>StudentOS – Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Persistent APK Download Banner -->
+  <div id="apk-banner">
+    <div class="banner-content">
+      <span class="material-icons-round banner-icon">phone_android</span>
+      <div class="banner-text">
+        <strong>This is a UI preview only.</strong> For the full experience, download the APK:
+        <a href="https://github.com/Chetanya7/StudentOS/blob/main/app-release.apk" target="_blank" rel="noopener">
+          Download APK from GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Container -->
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="screen-login" class="screen active">
+      <div class="login-container">
+        <span class="material-icons-round login-icon">calendar_month</span>
+        <h1 class="login-title">StudentOS</h1>
+        <p class="login-subtitle">Organize your academic life</p>
+        <button class="btn-elevated" onclick="navigateToDashboard()">
+          Sign in with Google
+        </button>
+      </div>
+    </div>
+
+    <!-- Dashboard Screen -->
+    <div id="screen-dashboard" class="screen">
+      <!-- App Bar -->
+      <header class="app-bar">
+        <h1 class="app-bar-title">StudentOS</h1>
+        <div class="app-bar-actions">
+          <button class="icon-btn" onclick="toggleTheme()" title="Toggle theme">
+            <span class="material-icons-round" id="theme-icon">dark_mode</span>
+          </button>
+          <button class="icon-btn" onclick="showScreen('screen-settings')" title="Settings">
+            <span class="material-icons-round">settings</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Tab Content -->
+      <main class="tab-content">
+        <!-- Calendar Tab -->
+        <div id="tab-calendar" class="tab-panel active">
+          <div class="tab-scroll">
+            <h3 class="section-title">Pending Suggestions</h3>
+            <div class="card suggestion-card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon">auto_awesome</span>
+                <div class="card-body">
+                  <strong>CS101 Midterm Review Session</strong>
+                  <p class="card-sub">Google Classroom • Repeats weekly</p>
+                </div>
+                <span class="card-date">Wed, 18 Jun • 02:00 PM</span>
+              </div>
+            </div>
+            <p class="hint-text">← Swipe to dismiss · Swipe to accept →</p>
+
+            <h3 class="section-title" style="margin-top:24px;">Upcoming Events</h3>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon">event</span>
+                <div class="card-body">
+                  <strong>Data Structures Assignment Due</strong>
+                  <p class="card-sub">Mon, 16 Jun • 11:59 PM</p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon">event</span>
+                <div class="card-body">
+                  <strong>Physics Lab Report</strong>
+                  <p class="card-sub">Tue, 17 Jun • 09:00 AM</p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon">event</span>
+                <div class="card-body">
+                  <strong>Team Meeting – Hackathon Prep</strong>
+                  <p class="card-sub">Wed, 18 Jun • 04:00 PM</p>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon">event</span>
+                <div class="card-body">
+                  <strong>Mathematics Quiz</strong>
+                  <p class="card-sub">Thu, 19 Jun • 10:00 AM</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="fab" onclick="showScreen('screen-smart-schedule')">
+            <span class="material-icons-round">auto_awesome</span>
+          </button>
+        </div>
+
+        <!-- Chat Tab -->
+        <div id="tab-chat" class="tab-panel">
+          <div class="tab-scroll">
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon">summarize</span>
+                <div class="card-body">
+                  <strong>Schedule summary</strong>
+                  <p class="card-sub" style="margin-top:8px;">You have 4 events this week. Your busiest day is Wednesday with 2 events. You have a quiz on Thursday — consider studying Tuesday evening.</p>
+                </div>
+              </div>
+            </div>
+            <div class="chat-messages">
+              <div class="chat-bubble user">What should I prioritize this week?</div>
+              <div class="chat-bubble assistant">Focus on the Data Structures assignment due Monday night. After that, start reviewing for the Mathematics Quiz on Thursday. Wednesday afternoon is free for hackathon prep.</div>
+            </div>
+          </div>
+          <div class="chat-input-row">
+            <button class="icon-btn-tonal">
+              <span class="material-icons-round">upload_file</span>
+            </button>
+            <input type="text" class="chat-input" placeholder="Ask about your week...">
+            <button class="icon-btn-filled">
+              <span class="material-icons-round">send</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Wellbeing Tab -->
+        <div id="tab-wellbeing" class="tab-panel">
+          <div class="tab-scroll">
+            <h3 class="section-title">Wellbeing</h3>
+            <!-- Wellness Snapshot -->
+            <div class="card wellness-card">
+              <div class="card-header-row">
+                <span class="material-icons-round" style="color:var(--primary);">favorite</span>
+                <strong>Today's Wellness</strong>
+              </div>
+              <div class="wellness-grid">
+                <div class="wellness-metric"><span class="emoji">😴</span><div><small>Sleep</small><br><strong>7h 30m</strong></div></div>
+                <div class="wellness-metric"><span class="emoji">💧</span><div><small>Water</small><br><strong>1.5 / 2.5 L</strong></div></div>
+                <div class="wellness-metric"><span class="emoji">🚶</span><div><small>Activity</small><br><strong>6,420 steps</strong></div></div>
+                <div class="wellness-metric"><span class="emoji">✨</span><div><small>Overall</small><br><strong>72 / 100</strong></div></div>
+              </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <p class="section-label">Quick Actions</p>
+            <div class="quick-actions-grid">
+              <button class="action-tile"><span class="material-icons-round">water_drop</span> Log Water</button>
+              <button class="action-tile"><span class="material-icons-round">bedtime</span> Log Sleep</button>
+              <button class="action-tile"><span class="material-icons-round">mood</span> Mood Check-In</button>
+              <button class="action-tile"><span class="material-icons-round">self_improvement</span> Breathing</button>
+            </div>
+
+            <!-- Health Summaries -->
+            <div class="card summary-card">
+              <div class="card-row">
+                <div class="progress-circle green"><span class="material-icons-round">directions_walk</span></div>
+                <div class="card-body">
+                  <strong>Activity & Movement</strong>
+                  <p class="card-sub">6,420 steps today</p>
+                  <p class="card-sub muted">64% of goal • Score: 68/100</p>
+                </div>
+                <span class="material-icons-round chevron">chevron_right</span>
+              </div>
+            </div>
+            <div class="card summary-card">
+              <div class="card-row">
+                <div class="progress-circle indigo"><span class="material-icons-round">bedtime</span></div>
+                <div class="card-body">
+                  <strong>Sleep</strong>
+                  <p class="card-sub">7h 30m last night</p>
+                  <p class="card-sub muted">Goal: 94% • Score: 82/100</p>
+                </div>
+                <span class="material-icons-round chevron">chevron_right</span>
+              </div>
+            </div>
+            <div class="card summary-card">
+              <div class="card-row">
+                <div class="progress-circle blue"><span class="material-icons-round">water_drop</span></div>
+                <div class="card-body">
+                  <strong>Hydration</strong>
+                  <p class="card-sub">1.5L / 2.5L</p>
+                  <p class="card-sub muted">60% complete</p>
+                </div>
+                <span class="material-icons-round chevron">chevron_right</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Money Tab -->
+        <div id="tab-money" class="tab-panel">
+          <div class="tab-scroll">
+            <h3 class="section-title">Finances</h3>
+            <!-- Budget Overview -->
+            <div class="card budget-card">
+              <div class="budget-header">
+                <div>
+                  <small class="muted">Monthly Budget</small>
+                  <h2>₹15,000</h2>
+                </div>
+                <div class="budget-right">
+                  <small class="muted">Spent</small>
+                  <h2 style="color:var(--error);">₹8,230</h2>
+                </div>
+              </div>
+              <div class="budget-bar">
+                <div class="budget-bar-fill" style="width:55%;"></div>
+              </div>
+              <p class="card-sub muted" style="margin-top:8px;">55% used · ₹6,770 remaining</p>
+            </div>
+
+            <!-- Balance -->
+            <div class="card">
+              <div class="card-row" style="justify-content:space-between;">
+                <div><small class="muted">Current Balance</small><h3>₹24,580</h3></div>
+                <button class="btn-text">Edit</button>
+              </div>
+            </div>
+
+            <!-- Quick actions -->
+            <div class="money-actions">
+              <button class="btn-outlined"><span class="material-icons-round">add</span> Income</button>
+              <button class="btn-outlined"><span class="material-icons-round">remove</span> Expense</button>
+              <button class="btn-outlined"><span class="material-icons-round">people</span> Lending</button>
+            </div>
+
+            <!-- Pending Transactions -->
+            <h3 class="section-title" style="margin-top:20px;">Pending Review</h3>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon" style="color:var(--error);">arrow_downward</span>
+                <div class="card-body">
+                  <strong>Zomato – Food Order</strong>
+                  <p class="card-sub">₹342 · Debit · Jun 14</p>
+                </div>
+                <div class="tx-actions">
+                  <button class="icon-btn small green"><span class="material-icons-round">check</span></button>
+                  <button class="icon-btn small red"><span class="material-icons-round">close</span></button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon" style="color:var(--success);">arrow_upward</span>
+                <div class="card-body">
+                  <strong>UPI – Rahul Sharma</strong>
+                  <p class="card-sub">₹500 · Credit · Jun 13</p>
+                </div>
+                <div class="tx-actions">
+                  <button class="icon-btn small green"><span class="material-icons-round">check</span></button>
+                  <button class="icon-btn small red"><span class="material-icons-round">close</span></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent transactions -->
+            <h3 class="section-title" style="margin-top:20px;">Recent Transactions</h3>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon" style="color:var(--error);">arrow_downward</span>
+                <div class="card-body"><strong>Amazon – Stationery</strong><p class="card-sub">₹890 · Debit · Jun 12</p></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-row">
+                <span class="material-icons-round card-icon" style="color:var(--error);">arrow_downward</span>
+                <div class="card-body"><strong>Canteen</strong><p class="card-sub">₹120 · Debit · Jun 11</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Bottom Navigation -->
+      <nav class="bottom-nav">
+        <button class="nav-item active" onclick="switchTab('calendar')">
+          <span class="material-icons-round">event</span>
+          <span class="nav-label">Calendar</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('chat')">
+          <span class="material-icons-round">chat_bubble_outline</span>
+          <span class="nav-label">Chat</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('wellbeing')">
+          <span class="material-icons-round">self_improvement</span>
+          <span class="nav-label">Wellbeing</span>
+        </button>
+        <button class="nav-item" onclick="switchTab('money')">
+          <span class="material-icons-round">account_balance_wallet</span>
+          <span class="nav-label">Money</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Settings Screen -->
+    <div id="screen-settings" class="screen">
+      <header class="app-bar">
+        <button class="icon-btn" onclick="showScreen('screen-dashboard')">
+          <span class="material-icons-round">arrow_back</span>
+        </button>
+        <h1 class="app-bar-title">Settings</h1>
+      </header>
+      <div class="settings-body">
+        <p class="section-label">Notifications</p>
+        <div class="settings-item">
+          <span class="material-icons-round">apps</span>
+          <div><strong>Monitor apps</strong><p class="card-sub">Choose which apps to monitor for notifications</p></div>
+        </div>
+        <div class="settings-item">
+          <span class="material-icons-round">filter_alt</span>
+          <div><strong>WhatsApp whitelist</strong><p class="card-sub">Manage which WhatsApp groups and people to monitor</p></div>
+        </div>
+        <hr class="divider">
+        <p class="section-label">Wellbeing</p>
+        <div class="settings-item">
+          <span class="material-icons-round">bedtime</span>
+          <div><strong>Sleep insights</strong><p class="card-sub">Set sleep goal and preferred sleep schedule</p></div>
+        </div>
+        <hr class="divider">
+        <p class="section-label">Account</p>
+        <div class="settings-item">
+          <span class="material-icons-round">logout</span>
+          <div><strong>Log out</strong><p class="card-sub">Sign out from StudentOS</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Smart Schedule Screen -->
+    <div id="screen-smart-schedule" class="screen">
+      <header class="app-bar">
+        <button class="icon-btn" onclick="showScreen('screen-dashboard')">
+          <span class="material-icons-round">arrow_back</span>
+        </button>
+        <h1 class="app-bar-title">Smart Schedule</h1>
+      </header>
+      <div class="smart-schedule-body">
+        <div class="card">
+          <div class="card-row" style="align-items:flex-start;">
+            <span class="material-icons-round card-icon">menu_book</span>
+            <div class="card-body">
+              <strong>Study for Mathematics Quiz</strong>
+              <p class="card-sub" style="margin-top:6px;">Tuesday evening (6–8 PM) is a great window — no conflicts and you'll retain more before Thursday's quiz.</p>
+              <p class="card-sub muted" style="margin-top:4px;">Based on gap analysis of your schedule</p>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-row" style="align-items:flex-start;">
+            <span class="material-icons-round card-icon">task_alt</span>
+            <div class="card-body">
+              <strong>Finish Data Structures Assignment</strong>
+              <p class="card-sub" style="margin-top:6px;">Start early Monday — deadline is tonight. You have a free morning slot from 9 AM to 12 PM.</p>
+              <p class="card-sub muted" style="margin-top:4px;">Urgent: due today</p>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-row" style="align-items:flex-start;">
+            <span class="material-icons-round card-icon">self_improvement</span>
+            <div class="card-body">
+              <strong>Take a break Wednesday</strong>
+              <p class="card-sub" style="margin-top:6px;">You have back-to-back activities. Consider a 30-min rest between your lab report review and team meeting.</p>
+              <p class="card-sub muted" style="margin-top:4px;">Wellness recommendation</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
