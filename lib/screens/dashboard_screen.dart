@@ -15,6 +15,7 @@ import '../features/financials/models/budget_settings.dart';
 import '../features/financials/models/financial_transaction.dart';
 import '../features/financials/models/private_lending_entry.dart';
 import '../features/notification_reading/models/notification_extraction.dart';
+import '../features/notification_reading/models/notification_llm_input.dart';
 import '../features/notification_reading/service/notification_service.dart';
 import '../features/notification_reading/service/notification_ai_extraction_service.dart';
 import '../features/wellbeing/models/hydration_models.dart';
@@ -173,6 +174,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
             continue;
           }
         }
+
+        final financialTransaction = _financialTransactionFromPayload(payload);
+        if (financialTransaction != null) {
+          await _notificationService.addFinancialTransaction(
+            financialTransaction,
+          );
+          debugPrint(
+            'Stored queued financial-looking notification for review: ${payload.rawNotificationTitle}',
+          );
+          continue;
+        }
+
         final extraction = await _notificationAiExtractionService.extract(
           payload,
         );
@@ -218,6 +231,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } finally {
       _isProcessingPendingNotifications = false;
     }
+  }
+
+  FinancialTransaction? _financialTransactionFromPayload(
+    NotificationLlmInputPayload payload,
+  ) {
+    final text = [
+      payload.appLabel,
+      payload.rawNotificationTitle,
+      payload.rawNotificationText,
+      payload.conversationTitle,
+      payload.messageText,
+    ].whereType<String>().join('\n');
+    final lower = text.toLowerCase();
+
+    if (text.trim().isEmpty) return null;
+
+    final amountMatch = RegExp(
+      r'(?:rs\.?|inr|₹)\s*[0-9][0-9,]*(?:\.\d{1,2})?|[0-9][0-9,]*(?:\.\d{1,2})?\s*(?:rs\.?|inr|₹)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final amountText = amountMatch
+        ?.group(0)
+        ?.replaceAll(RegExp(r'rs\.?|inr|₹', caseSensitive: false), '');
+    final amount = double.tryParse(
+      amountText?.replaceAll(',', '').trim() ?? '',
+    );
+    final hasFinanceKeyword = RegExp(
+      r'\b(a/c|acct|account|bank|upi|imps|neft|rtgs|atm|card|txn|transaction|debited|credited|debit|credit|paid|received|withdrawn|transferred)\b',
+      caseSensitive: false,
+    ).hasMatch(lower);
+    final direction = _financialDirection(lower);
+
+    if (amount == null || !hasFinanceKeyword || direction == null) {
+      return null;
+    }
+
+    // HACKATHON DEMO SHIM: accepts bank-shaped messages from normal contacts
+    // so transaction ingestion can be demoed from any phone. Replace this with
+    // strict trusted sender verification before production.
+    return FinancialTransaction(
+      id: '${payload.notificationKey}|${payload.postTime}|${payload.rawNotificationText ?? ''}',
+      amount: amount,
+      direction: direction,
+      currency: 'INR',
+      sourceApp: payload.appLabel ?? payload.appPackageName,
+      sender: payload.rawNotificationTitle,
+      message: payload.rawNotificationText ?? payload.messageText ?? '',
+      postTime: DateTime.fromMillisecondsSinceEpoch(payload.postTime),
+      reviewStatus: 'pending',
+      category: 'Miscellaneous',
+      description: '',
+    );
+  }
+
+  String? _financialDirection(String lower) {
+    if (RegExp(
+      r'\b(credited|credit|received|deposited|refund|cashback|transferred from)\b',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      return 'credit';
+    }
+    if (RegExp(
+      r'\b(debited|debit|spent|paid|sent|withdrawn|withdrawal|transferred to)\b',
+      caseSensitive: false,
+    ).hasMatch(lower)) {
+      return 'debit';
+    }
+    return null;
   }
 
   @override

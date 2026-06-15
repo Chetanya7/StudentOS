@@ -25,6 +25,9 @@ class NotificationReaderService : NotificationListenerService() {
             }
 
             val payload = buildLlmPayload(sbn)
+            if (FinancialNotificationParser.looksLikeFinancialNotification(payload)) {
+                Log.i(TAG, "Financial parser candidate: ${FinancialNotificationParser.describeDecision(payload)}")
+            }
             val financialTransaction = FinancialNotificationParser.parse(payload)
             if (financialTransaction != null) {
                 FinancialTransactionStore.add(this, financialTransaction)

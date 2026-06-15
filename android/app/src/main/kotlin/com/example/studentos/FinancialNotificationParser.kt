@@ -54,9 +54,7 @@ object FinancialNotificationParser {
         val amount = extractAmount(text) ?: return null
         val direction = direction(lower) ?: return null
 
-        if (!hasTrustedSenderShape(payload)) {
-            return null
-        }
+        val trustedSender = hasTrustedSenderShape(payload)
 
         val transaction = JSONObject()
         transaction.put("id", transactionId(payload))
@@ -68,7 +66,32 @@ object FinancialNotificationParser {
         transaction.put("sender", payload.optString("rawNotificationTitle"))
         transaction.put("message", payload.optString("rawNotificationText"))
         transaction.put("postTime", payload.optLong("postTime"))
+        // HACKATHON DEMO SHIM: accept bank-shaped messages even from untrusted
+        // personal senders so judges can demo transaction ingestion with any
+        // phone. Replace this with strict sender verification before production.
+        transaction.put("trustedSender", trustedSender)
         return transaction
+    }
+
+    fun looksLikeFinancialNotification(payload: JSONObject): Boolean {
+        val text = searchableText(payload)
+        if (text.isBlank()) return false
+
+        val lower = text.lowercase(Locale.US)
+        return hasFinancialShape(lower) && extractAmount(text) != null
+    }
+
+    fun describeDecision(payload: JSONObject): String {
+        val text = searchableText(payload)
+        if (text.isBlank()) return "not financial: blank searchable text"
+
+        val lower = text.lowercase(Locale.US)
+        val hasShape = hasFinancialShape(lower)
+        val amount = extractAmount(text)
+        val direction = direction(lower)
+        val trustedSender = hasTrustedSenderShape(payload)
+
+        return "financialDecision(shape=$hasShape, amount=$amount, direction=$direction, trustedSender=$trustedSender, sender=\"${payload.optString("rawNotificationTitle")}\", text=\"${payload.optString("rawNotificationText")}\")"
     }
 
     private fun transactionId(payload: JSONObject): String {
