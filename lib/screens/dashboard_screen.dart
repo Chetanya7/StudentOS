@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/suggested_event.dart';
 import '../services/suggestion_service.dart';
 import '../services/theme_service.dart';
 
+import '../features/chat/models/chat_data_record.dart';
 import '../features/chat/models/chat_message.dart';
 import '../features/chat/service/calendar_chat_service.dart';
 import '../features/financials/models/budget_settings.dart';
@@ -230,6 +232,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               builder: (context, themeMode, child) {
                 final isDark =
                     themeMode == ThemeMode.dark ||
+                final isDark =
+                    themeMode == ThemeMode.dark ||
                     (themeMode == ThemeMode.system &&
                         MediaQuery.of(context).platformBrightness ==
                             Brightness.dark);
@@ -294,7 +298,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 });
               },
             ),
-            _ChatTab(futureEvents: futureEvents),
+            _ChatTab(
+              futureEvents: futureEvents,
+              suggestionService: _suggestionService,
+            ),
             _WellbeingTab(notificationService: _notificationService),
             _FinancialsTab(notificationService: _notificationService),
           ],
@@ -564,6 +571,9 @@ class _CalendarTabState extends State<_CalendarTab> {
                   title: suggestion.title,
                   start: suggestion.start,
                   end: suggestion.end,
+                  location: suggestion.location,
+                  recurrenceRule: suggestion.recurrenceRule,
+                  timeZone: suggestion.timeZone,
                   description: 'Suggested by StudentOS: ${suggestion.source}',
                 );
 
@@ -604,7 +614,17 @@ class _CalendarTabState extends State<_CalendarTab> {
                 suggestion.title,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              subtitle: Text(suggestion.source),
+              subtitle: Text(
+                [
+                  if (suggestion.location != null &&
+                      suggestion.location!.trim().isNotEmpty)
+                    suggestion.location!,
+                  if (suggestion.recurrenceRule != null &&
+                      suggestion.recurrenceRule!.trim().isNotEmpty)
+                    'Repeats weekly',
+                  suggestion.source,
+                ].join(' • '),
+              ),
               trailing: Text(
                 DateFormat(
                   'EEE, dd MMM • hh:mm a',
@@ -628,6 +648,204 @@ class _WellbeingTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return WellbeingDashboard(notificationService: notificationService);
   }
+}
+
+class _HydrationMetric extends StatelessWidget {
+  const _HydrationMetric({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _HydrationSettingsDialog extends StatefulWidget {
+  const _HydrationSettingsDialog({required this.settings});
+
+  final HydrationSettings settings;
+
+  @override
+  State<_HydrationSettingsDialog> createState() =>
+      _HydrationSettingsDialogState();
+}
+
+class _HydrationSettingsDialogState extends State<_HydrationSettingsDialog> {
+  late bool _enabled;
+  late bool _soundEnabled;
+  late TimeOfDay _startTime;
+  late TimeOfDay _endTime;
+  late double _frequencyMinutes;
+  late final TextEditingController _goalController;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = widget.settings;
+    _enabled = settings.enabled;
+    _soundEnabled = settings.soundEnabled;
+    _startTime = _timeOfDay(settings.startMinutes);
+    _endTime = _timeOfDay(settings.endMinutes);
+    _frequencyMinutes = settings.frequencyMinutes.toDouble();
+    _goalController = TextEditingController(
+      text: (settings.dailyGoalMl / 1000).toStringAsFixed(1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _goalController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickStart() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+    );
+    if (picked == null) return;
+    setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEnd() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime,
+    );
+    if (picked == null) return;
+    setState(() => _endTime = picked);
+  }
+
+  void _save() {
+    final goalLiters = double.tryParse(_goalController.text.trim()) ?? 2;
+    final goalMl = (goalLiters * 1000).round().clamp(250, 10000);
+    final startMinutes = _minutesOfDay(_startTime);
+    final endMinutes = _minutesOfDay(_endTime);
+
+    if (endMinutes <= startMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('End time must be after start time.')),
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      HydrationSettings(
+        enabled: _enabled,
+        dailyGoalMl: goalMl,
+        startMinutes: startMinutes,
+        endMinutes: endMinutes,
+        frequencyMinutes: _frequencyMinutes.round(),
+        soundEnabled: _soundEnabled,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Hydration reminders'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Enable reminders'),
+              value: _enabled,
+              onChanged: (value) => setState(() => _enabled = value),
+            ),
+            TextField(
+              controller: _goalController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Daily goal',
+                suffixText: 'liters',
+              ),
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Start time'),
+              trailing: Text(_startTime.format(context)),
+              onTap: _pickStart,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('End time'),
+              trailing: Text(_endTime.format(context)),
+              onTap: _pickEnd,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Every ${_frequencyMinutes.round()} minutes'),
+              subtitle: Slider(
+                value: _frequencyMinutes,
+                min: 15,
+                max: 240,
+                divisions: 15,
+                label: '${_frequencyMinutes.round()} min',
+                onChanged: (value) => setState(() => _frequencyMinutes = value),
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Reminder sound'),
+              value: _soundEnabled,
+              onChanged: (value) => setState(() => _soundEnabled = value),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
+}
+
+String _formatMl(int amountMl) {
+  if (amountMl >= 1000) {
+    final liters = amountMl / 1000;
+    return '${liters.toStringAsFixed(liters == liters.roundToDouble() ? 0 : 1)} L';
+  }
+  return '$amountMl ml';
+}
+
+String _formatTime(int minutes) {
+  final hour = minutes ~/ 60;
+  final minute = minutes % 60;
+  final suffix = hour >= 12 ? 'PM' : 'AM';
+  final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+  return '$displayHour:${minute.toString().padLeft(2, '0')} $suffix';
+}
+
+TimeOfDay _timeOfDay(int minutes) {
+  return TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+}
+
+int _minutesOfDay(TimeOfDay value) {
+  return value.hour * 60 + value.minute;
 }
 
 class _SmartScheduleScreen extends StatelessWidget {
@@ -741,9 +959,10 @@ class _EventCard extends StatelessWidget {
 }
 
 class _ChatTab extends StatefulWidget {
-  const _ChatTab({required this.futureEvents});
+  const _ChatTab({required this.futureEvents, required this.suggestionService});
 
   final Future<List<CalendarEvent>> futureEvents;
+  final SuggestionService suggestionService;
 
   @override
   State<_ChatTab> createState() => _ChatTabState();
@@ -751,11 +970,15 @@ class _ChatTab extends StatefulWidget {
 
 class _ChatTabState extends State<_ChatTab> {
   final CalendarChatService _chatService = const CalendarChatService();
+  final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _questionController = TextEditingController();
   final List<ChatMessage> _messages = <ChatMessage>[];
+  final List<ChatDataRecord> _uploadedRecords = <ChatDataRecord>[];
+  XFile? _attachedImage;
   late Future<String> _summaryFuture;
   List<CalendarEvent> _events = const <CalendarEvent>[];
   bool _isAnswering = false;
+  bool _isUploadingImage = false;
 
   @override
   void initState() {
@@ -774,7 +997,12 @@ class _ChatTabState extends State<_ChatTab> {
 
   Future<void> _askQuestion() async {
     final question = _questionController.text.trim();
-    if (question.isEmpty || _isAnswering) return;
+    if (_isAnswering || _isUploadingImage) return;
+    if (_attachedImage != null) {
+      await _sendAttachedImage(question);
+      return;
+    }
+    if (question.isEmpty) return;
 
     setState(() {
       _questionController.clear();
@@ -786,6 +1014,7 @@ class _ChatTabState extends State<_ChatTab> {
       question: question,
       events: _events,
       history: _messages,
+      records: _uploadedRecords,
     );
 
     if (!mounted) return;
@@ -793,6 +1022,87 @@ class _ChatTabState extends State<_ChatTab> {
     setState(() {
       _messages.add(ChatMessage(role: ChatMessageRole.assistant, text: answer));
       _isAnswering = false;
+    });
+  }
+
+  Future<void> _uploadImage() async {
+    if (_isUploadingImage) return;
+
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1600,
+    );
+    if (image == null) return;
+
+    setState(() {
+      _attachedImage = image;
+    });
+  }
+
+  Future<void> _sendAttachedImage(String userText) async {
+    final image = _attachedImage;
+    if (image == null) return;
+
+    setState(() {
+      _isUploadingImage = true;
+      _attachedImage = null;
+      _questionController.clear();
+      _messages.add(
+        ChatMessage(
+          role: ChatMessageRole.user,
+          text: userText.isEmpty
+              ? 'Uploaded an image.'
+              : 'Uploaded an image: $userText',
+        ),
+      );
+    });
+
+    final record = await _chatService.extractImageData(
+      imageBytes: await image.readAsBytes(),
+      mimeType: image.mimeType ?? 'image/jpeg',
+      userText: userText,
+    );
+
+    if (!mounted) return;
+
+    if (record == null) {
+      setState(() {
+        _isUploadingImage = false;
+        _messages.add(
+          const ChatMessage(
+            role: ChatMessageRole.assistant,
+            text:
+                'I could not extract useful data from that image. Try a clearer image or add a short note with it.',
+          ),
+        );
+      });
+      return;
+    }
+
+    setState(() {
+      _isUploadingImage = false;
+      _uploadedRecords.insert(0, record);
+    });
+
+    final scheduleSuggestions = await _chatService
+        .extractScheduleSuggestionsFromRecord(record: record);
+    for (final suggestion in scheduleSuggestions) {
+      await widget.suggestionService.addSuggestion(suggestion);
+    }
+
+    if (!mounted) return;
+
+    final message = record.stream == ChatDataStream.scheduleData
+        ? scheduleSuggestions.isEmpty
+              ? 'This was schedule data. I stored it, but could not confidently create calendar suggestions.'
+              : 'This was schedule data. I created ${scheduleSuggestions.length} calendar suggestion(s) for review.'
+        : 'This was ${record.stream.value.replaceAll('_', ' ')}${record.subcategory.isEmpty ? '' : ' / ${record.subcategory}'}. I stored it for chat.';
+
+    setState(() {
+      _messages.add(
+        ChatMessage(role: ChatMessageRole.assistant, text: message),
+      );
     });
   }
 
@@ -831,7 +1141,24 @@ class _ChatTabState extends State<_ChatTab> {
                       ..._messages.map(
                         (message) => _ChatBubble(message: message),
                       ),
+                    if (_attachedImage != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: _AttachedImageChip(
+                          fileName: _attachedImage!.name,
+                          onRemove: () {
+                            setState(() {
+                              _attachedImage = null;
+                            });
+                          },
+                        ),
+                      ),
                     if (_isAnswering)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: LinearProgressIndicator(),
+                      ),
+                    if (_isUploadingImage)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
                         child: LinearProgressIndicator(),
@@ -844,6 +1171,14 @@ class _ChatTabState extends State<_ChatTab> {
           const SizedBox(height: 12),
           Row(
             children: [
+              IconButton.filledTonal(
+                onPressed: _isUploadingImage || _isAnswering
+                    ? null
+                    : _uploadImage,
+                icon: const Icon(Icons.upload_file),
+                tooltip: 'Upload image',
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: TextField(
                   controller: _questionController,
@@ -859,7 +1194,9 @@ class _ChatTabState extends State<_ChatTab> {
               ),
               const SizedBox(width: 8),
               IconButton.filled(
-                onPressed: _isAnswering ? null : _askQuestion,
+                onPressed: _isAnswering || _isUploadingImage
+                    ? null
+                    : _askQuestion,
                 icon: const Icon(Icons.send),
                 tooltip: 'Send',
               ),
@@ -900,6 +1237,25 @@ class _ScheduleSummaryCard extends StatelessWidget {
             Text(summary),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AttachedImageChip extends StatelessWidget {
+  const _AttachedImageChip({required this.fileName, required this.onRemove});
+
+  final String fileName;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: InputChip(
+        avatar: const Icon(Icons.image, size: 18),
+        label: Text('Attached: $fileName', overflow: TextOverflow.ellipsis),
+        onDeleted: onRemove,
       ),
     );
   }

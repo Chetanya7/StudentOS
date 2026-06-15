@@ -10,6 +10,8 @@ class CalendarService {
 
   CalendarService(this.user);
 
+  static const String _fallbackRecurringTimeZone = 'Asia/Kolkata';
+
   Future<List<CalendarEvent>> getUpcomingEvents() async {
     return getEventsForNextDays(days: 7, maxResults: 20);
   }
@@ -59,19 +61,31 @@ class CalendarService {
     required DateTime start,
     DateTime? end,
     String? description,
+    String? location,
+    String? recurrenceRule,
     String? timeZone,
   }) async {
     final headers = await user.authHeaders;
     final client = AuthenticatedClient(headers);
     final calendarApi = CalendarApi(client);
+    final trimmedRecurrence = recurrenceRule?.trim();
+    final eventTimeZone =
+        timeZone ??
+        (trimmedRecurrence == null || trimmedRecurrence.isEmpty
+            ? null
+            : _fallbackRecurringTimeZone);
 
     final event = Event(
       summary: title,
       description: description,
-      start: EventDateTime(dateTime: start, timeZone: timeZone),
+      location: location,
+      recurrence: trimmedRecurrence == null || trimmedRecurrence.isEmpty
+          ? null
+          : <String>[trimmedRecurrence],
+      start: EventDateTime(dateTime: start, timeZone: eventTimeZone),
       end: EventDateTime(
         dateTime: end ?? start.add(const Duration(hours: 1)),
-        timeZone: timeZone,
+        timeZone: eventTimeZone,
       ),
     );
 
