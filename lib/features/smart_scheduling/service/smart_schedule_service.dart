@@ -1,16 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 import '../../../models/calendar_event.dart';
-import '../../../services/hugging_face_config.dart';
+import '../../../services/backend_ai_service.dart';
 import '../models/smart_schedule_recommendation.dart';
 
 class SmartScheduleService {
   const SmartScheduleService();
+
+  static const BackendAiService _backendAiService = BackendAiService();
 
   String buildPrompt({
     required List<CalendarEvent> events,
@@ -82,7 +82,7 @@ ${const JsonEncoder.withIndent('  ').convert(payload)}
     DateTime? now,
   }) async {
     final currentTime = now ?? DateTime.now();
-    final aiRecommendations = await _getHuggingFaceRecommendations(
+    final aiRecommendations = await _getBackendRecommendations(
       events: events,
       now: currentTime,
     );
@@ -94,103 +94,28 @@ ${const JsonEncoder.withIndent('  ').convert(payload)}
     return _buildFallbackRecommendations(events: events, now: currentTime);
   }
 
-  Future<List<SmartScheduleRecommendation>> _getHuggingFaceRecommendations({
+  Future<List<SmartScheduleRecommendation>> _getBackendRecommendations({
     required List<CalendarEvent> events,
     required DateTime now,
   }) async {
-    final env = _loadedEnv();
-    final modelUrl = env['HF_MODEL_URL']?.trim() ?? '';
-    final modelId = HuggingFaceConfig.modelId(modelUrl);
-    final token = env['HF_TOKEN']?.trim() ?? '';
-
-    if (modelId == null || token.isEmpty) {
-      return const [];
-    }
-
     try {
       final prompt = buildPrompt(events: events, now: now);
       debugPrint('Smart scheduling prompt:\n$prompt');
-
-      final response = await http
-          .post(
-            HuggingFaceConfig.chatCompletionsUri,
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'model': '$modelId:fastest',
-              'messages': [
-                {'role': 'user', 'content': prompt},
-              ],
-              'max_tokens': 700,
-              'temperature': 0.2,
-              'stream': false,
-            }),
-          )
-          .timeout(const Duration(seconds: 25));
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          'Hugging Face smart scheduling failed: ${response.statusCode} ${response.body}',
-        );
-        return const [];
-      }
-
-      final generatedText = _extractGeneratedText(response.body);
+      final generatedText = await _backendAiService
+          .postText('/ai/smart-schedule', {
+            'now': now.toIso8601String(),
+            'timezone': now.timeZoneName,
+            'calendar_events': events.map((event) => event.toJson()).toList(),
+          }, timeout: const Duration(seconds: 90));
       if (generatedText == null || generatedText.trim().isEmpty) {
         return const [];
       }
 
       return parseRecommendationsJson(_extractJsonObject(generatedText));
     } catch (e) {
-      debugPrint('Hugging Face smart scheduling error: $e');
+      debugPrint('Backend smart scheduling error: $e');
       return const [];
     }
-  }
-
-  Map<String, String> _loadedEnv() {
-    try {
-      return dotenv.env;
-    } catch (_) {
-      return const {};
-    }
-  }
-
-  String? _extractGeneratedText(String responseBody) {
-    final decoded = jsonDecode(responseBody);
-
-    if (decoded is Map) {
-      final choices = decoded['choices'];
-      if (choices is List && choices.isNotEmpty) {
-        final first = choices.first;
-        if (first is Map) {
-          final message = first['message'];
-          if (message is Map && message['content'] != null) {
-            return message['content'].toString();
-          }
-        }
-      }
-    }
-
-    if (decoded is List && decoded.isNotEmpty) {
-      final first = decoded.first;
-      if (first is Map && first['generated_text'] != null) {
-        return first['generated_text'].toString();
-      }
-    }
-
-    if (decoded is Map) {
-      if (decoded['generated_text'] != null) {
-        return decoded['generated_text'].toString();
-      }
-
-      if (decoded['error'] != null) {
-        debugPrint('Hugging Face error: ${decoded['error']}');
-      }
-    }
-
-    return null;
   }
 
   String _extractJsonObject(String text) {

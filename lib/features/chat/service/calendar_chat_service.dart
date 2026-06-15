@@ -1,12 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 
 import '../../../models/calendar_event.dart';
 import '../../../models/suggested_event.dart';
-import '../../../services/hugging_face_config.dart';
+import '../../../services/backend_ai_service.dart';
 import '../models/chat_data_record.dart';
 import '../models/chat_message.dart';
 
@@ -14,6 +12,7 @@ class CalendarChatService {
   const CalendarChatService();
 
   static const String _fallbackTimeZone = 'Asia/Kolkata';
+  static const BackendAiService _backendAiService = BackendAiService();
 
   Future<String> summarizeSchedule({
     required List<CalendarEvent> events,
@@ -111,17 +110,6 @@ class CalendarChatService {
     required String userText,
     DateTime? now,
   }) async {
-    final env = _loadedEnv();
-    final modelUrl = env['HF_VISION_MODEL_URL']?.trim().isNotEmpty == true
-        ? env['HF_VISION_MODEL_URL']!.trim()
-        : env['HF_MODEL_URL']?.trim() ?? '';
-    final modelId = HuggingFaceConfig.modelId(modelUrl);
-    final token = env['HF_TOKEN']?.trim() ?? '';
-
-    if (modelId == null || token.isEmpty) {
-      return null;
-    }
-
     final prompt = _buildImageExtractionPrompt(
       userText: userText,
       now: now ?? DateTime.now(),
@@ -130,78 +118,32 @@ class CalendarChatService {
 
     try {
       final requestBody = {
-        'model': '$modelId:fastest',
-        'messages': [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'text', 'text': prompt},
-              {
-                'type': 'image_url',
-                'image_url': {'url': 'data:$mimeType;base64,$imageBase64'},
-              },
-            ],
-          },
-        ],
+        'image_base64': imageBase64,
+        'mime_type': mimeType,
+        'user_message': userText,
         'max_tokens': 2600,
         'temperature': 0.1,
-        'stream': false,
       };
       final logBody = {
-        'model': '$modelId:fastest',
-        'messages': [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'text', 'text': prompt},
-              {
-                'type': 'image_url',
-                'image_url': {
-                  'image': 'yes',
-                  'mimeType': mimeType,
-                  'bytes': imageBytes.length,
-                },
-              },
-            ],
-          },
-        ],
+        'promptPreview': prompt,
+        'image': 'yes',
+        'mimeType': mimeType,
+        'bytes': imageBytes.length,
+        'user_message': userText,
         'max_tokens': 2600,
         'temperature': 0.1,
-        'stream': false,
       };
       _logLarge(
-        'HF IMAGE EXTRACTION PAYLOAD',
+        'BACKEND IMAGE EXTRACTION PAYLOAD',
         const JsonEncoder.withIndent('  ').convert(logBody),
       );
 
-      final response = await http
-          .post(
-            HuggingFaceConfig.chatCompletionsUri,
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(requestBody),
-          )
-          .timeout(const Duration(seconds: 90));
-
-      _logLarge(
-        'HF IMAGE EXTRACTION RESPONSE ${response.statusCode}',
-        response.body,
+      final text = await _backendAiService.postText(
+        '/ai/vision/extract',
+        requestBody,
+        timeout: const Duration(seconds: 120),
       );
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          'Hugging Face image extraction failed: ${response.statusCode} ${response.body}',
-        );
-        return null;
-      }
-
-      final text = _extractGeneratedText(
-        response.body,
-        includeReasoningWhenPresent: true,
-      );
-      _logLarge('HF IMAGE EXTRACTION GENERATED TEXT', text ?? '<null>');
+      _logLarge('BACKEND IMAGE EXTRACTION GENERATED TEXT', text ?? '<null>');
       if (text == null || text.trim().isEmpty) return null;
       final record = _parseImageRecord(
         text,
@@ -209,14 +151,14 @@ class CalendarChatService {
         now: now ?? DateTime.now(),
       );
       _logLarge(
-        'HF IMAGE EXTRACTION PARSED RECORD',
+        'BACKEND IMAGE EXTRACTION PARSED RECORD',
         record == null
             ? '<null>'
             : const JsonEncoder.withIndent('  ').convert(record.toJson()),
       );
       return record;
     } catch (e) {
-      _logLarge('HF IMAGE EXTRACTION ERROR', e.toString());
+      _logLarge('BACKEND IMAGE EXTRACTION ERROR', e.toString());
       return null;
     }
   }
@@ -512,53 +454,24 @@ ${const JsonEncoder.withIndent('  ').convert(record.toJson())}
   }
 
   Future<String?> _callHuggingFace(String prompt, {int maxTokens = 500}) async {
-    final env = _loadedEnv();
-    final modelUrl = env['HF_MODEL_URL']?.trim() ?? '';
-    final modelId = HuggingFaceConfig.modelId(modelUrl);
-    final token = env['HF_TOKEN']?.trim() ?? '';
-
-    if (modelId == null || token.isEmpty) {
-      return null;
-    }
-
     try {
       final requestBody = {
-        'model': '$modelId:fastest',
-        'messages': [
-          {'role': 'user', 'content': prompt},
-        ],
+        'prompt': prompt,
         'max_tokens': maxTokens,
         'temperature': 0.3,
-        'stream': false,
       };
       _logLarge(
-        'HF CHAT PAYLOAD',
+        'BACKEND AI PAYLOAD',
         const JsonEncoder.withIndent('  ').convert(requestBody),
       );
 
-      final response = await http
-          .post(
-            HuggingFaceConfig.chatCompletionsUri,
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(requestBody),
-          )
-          .timeout(const Duration(seconds: 25));
-
-      _logLarge('HF CHAT RESPONSE ${response.statusCode}', response.body);
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          'Hugging Face chat failed: ${response.statusCode} ${response.body}',
-        );
-        return null;
-      }
-
-      return _extractGeneratedText(response.body);
+      return await _backendAiService.postText(
+        '/ai/prompt',
+        requestBody,
+        timeout: const Duration(seconds: 120),
+      );
     } catch (e) {
-      debugPrint('Hugging Face chat error: $e');
+      debugPrint('Backend AI error: $e');
       return null;
     }
   }
@@ -1072,64 +985,6 @@ ${const JsonEncoder.withIndent('  ').convert(record.toJson())}
       }
     }
     debugPrint('===== $title END =====');
-  }
-
-  Map<String, String> _loadedEnv() {
-    try {
-      return dotenv.env;
-    } catch (_) {
-      return const {};
-    }
-  }
-
-  String? _extractGeneratedText(
-    String responseBody, {
-    bool includeReasoningWhenPresent = false,
-  }) {
-    final decoded = jsonDecode(responseBody);
-
-    if (decoded is Map) {
-      final choices = decoded['choices'];
-      if (choices is List && choices.isNotEmpty) {
-        final first = choices.first;
-        if (first is Map) {
-          final message = first['message'];
-          if (message is Map) {
-            final content = message['content']?.toString() ?? '';
-            final reasoning = message['reasoning']?.toString() ?? '';
-            if (content.trim().isNotEmpty) {
-              if (includeReasoningWhenPresent && reasoning.trim().isNotEmpty) {
-                return '$content\n\nAdditional extraction notes:\n$reasoning';
-              }
-              return content;
-            }
-
-            if (reasoning.trim().isNotEmpty) {
-              return reasoning;
-            }
-          }
-        }
-      }
-    }
-
-    if (decoded is List && decoded.isNotEmpty) {
-      final first = decoded.first;
-      if (first is Map && first['generated_text'] != null) {
-        return first['generated_text'].toString();
-      }
-    }
-
-    if (decoded is Map) {
-      if (decoded['generated_text'] != null) {
-        return decoded['generated_text'].toString();
-      }
-
-      if (decoded['error'] != null) {
-        debugPrint('Hugging Face chat error: ${decoded['error']}');
-      }
-    }
-
-    return null;
   }
 
   String _cleanText(String text) {
