@@ -21,6 +21,7 @@ object HydrationReminderScheduler {
 	const val ACTION_DRANK = "com.example.studentos.HYDRATION_DRANK"
 	const val ACTION_SNOOZE = "com.example.studentos.HYDRATION_SNOOZE"
 	const val CHANNEL_ID = "hydration_reminders"
+	const val SILENT_CHANNEL_ID = "hydration_reminders_silent"
 
 	private const val FLUTTER_PREFS = "FlutterSharedPreferences"
 	private const val SETTINGS_KEY = "flutter.hydration_settings_json"
@@ -131,19 +132,19 @@ object HydrationReminderScheduler {
 			action = ACTION_SNOOZE
 		}
 
+		val soundEnabled = settings.optBoolean("soundEnabled", true)
 		val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-			Notification.Builder(context, CHANNEL_ID)
+			Notification.Builder(context, if (soundEnabled) CHANNEL_ID else SILENT_CHANNEL_ID)
 		} else {
 			@Suppress("DEPRECATION")
 			Notification.Builder(context)
 		}
 
-		if (!settings.optBoolean("soundEnabled", true)) {
+		if (!soundEnabled && Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
 			@Suppress("DEPRECATION")
-			builder
-				.setDefaults(0)
-				.setSound(null)
-				.setVibrate(null)
+			builder.setDefaults(0)
+			builder.setSound(null)
+			builder.setVibrate(null)
 		}
 
 		val notification = builder
@@ -298,7 +299,17 @@ object HydrationReminderScheduler {
 		).apply {
 			description = "Configurable water intake reminders"
 		}
+		val silentChannel = NotificationChannel(
+			SILENT_CHANNEL_ID,
+			"Hydration reminders silent",
+			NotificationManager.IMPORTANCE_LOW
+		).apply {
+			description = "Hydration reminders without sound"
+			setSound(null, null)
+			enableVibration(false)
+		}
 		manager.createNotificationChannel(channel)
+		manager.createNotificationChannel(silentChannel)
 	}
 
 	private fun dateKey(date: Date): String {

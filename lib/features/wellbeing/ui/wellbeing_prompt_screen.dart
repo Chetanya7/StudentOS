@@ -58,7 +58,8 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
     String message;
     switch (choice) {
       case 'Sad':
-        message = "It's okay to be sad sometimes. Hang out with friends today if possible — it helps.";
+        message =
+            "It's okay to be sad sometimes. Hang out with friends today if possible — it helps.";
         break;
       case 'Fine':
         message = 'Glad to hear that.';
@@ -113,7 +114,8 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
                     const SizedBox(height: 40),
                     Text(
                       'How have you been feeling today?',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
                             color: Colors.indigo.shade900,
                             fontWeight: FontWeight.w700,
                           ),
@@ -195,7 +197,7 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
-                color: Colors.indigo.shade900.withOpacity(0.18),
+                color: Colors.indigo.shade900.withValues(alpha: 0.18),
                 alignment: Alignment.center,
                 padding: const EdgeInsets.all(24),
                 child: Transform.translate(
@@ -211,13 +213,13 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
-                            Colors.white.withOpacity(0.96),
-                            accent.withOpacity(0.18),
+                            Colors.white.withValues(alpha: 0.96),
+                            accent.withValues(alpha: 0.18),
                           ],
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: accent.withOpacity(0.28),
+                            color: accent.withValues(alpha: 0.28),
                             blurRadius: 32,
                             offset: const Offset(0, 18),
                           ),
@@ -235,7 +237,7 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
                                 height: 86,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: accent.withOpacity(0.16),
+                                  color: accent.withValues(alpha: 0.16),
                                 ),
                               ),
                               Transform.rotate(
@@ -247,9 +249,7 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
                           const SizedBox(height: 22),
                           Text(
                             choice,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
+                            style: Theme.of(context).textTheme.headlineSmall
                                 ?.copyWith(
                                   color: Colors.indigo.shade900,
                                   fontWeight: FontWeight.w800,
@@ -259,12 +259,12 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
                           Text(
                             message,
                             textAlign: TextAlign.center,
-                            style:
-                                Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      color: Colors.indigo.shade900,
-                                      height: 1.45,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  color: Colors.indigo.shade900,
+                                  height: 1.45,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                           const SizedBox(height: 24),
                           ClipRRect(
@@ -272,7 +272,7 @@ class _WellbeingPromptScreenState extends State<WellbeingPromptScreen>
                             child: LinearProgressIndicator(
                               minHeight: 5,
                               value: null,
-                              backgroundColor: accent.withOpacity(0.12),
+                              backgroundColor: accent.withValues(alpha: 0.12),
                               color: accent,
                             ),
                           ),

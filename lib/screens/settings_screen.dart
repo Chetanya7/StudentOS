@@ -4,6 +4,8 @@ import 'login_screen.dart';
 import '../features/notification_reading/service/notification_service.dart';
 import '../features/notification_reading/ui/whitelist_settings_screen.dart';
 import '../features/notification_reading/ui/app_whitelist_screen.dart';
+import '../features/wellbeing/ui/sleep_settings_screen.dart';
+import '../features/wellbeing/service/sleep_repository.dart';
 import '../services/auth_state_manager.dart';
 import '../services/google_auth_service.dart';
 
@@ -52,9 +54,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Logged out successfully')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
 
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -63,9 +65,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Logout failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Logout failed: $e')));
       setState(() {
         _isLoggingOut = false;
       });
@@ -84,14 +86,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               'Notifications',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
           ListTile(
             title: const Text('Monitor apps'),
-            subtitle: const Text('Choose which apps to monitor for notifications'),
+            subtitle: const Text(
+              'Choose which apps to monitor for notifications',
+            ),
             leading: const Icon(Icons.apps),
             onTap: () {
               Navigator.push(
@@ -107,7 +111,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ListTile(
             title: const Text('WhatsApp whitelist'),
-            subtitle: const Text('Manage which WhatsApp groups and people to monitor'),
+            subtitle: const Text(
+              'Manage which WhatsApp groups and people to monitor',
+            ),
             leading: const Icon(Icons.filter_alt),
             onTap: () {
               Navigator.push(
@@ -121,14 +127,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           const Divider(height: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              'Wellbeing',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          ListTile(
+            title: const Text('Sleep insights'),
+            subtitle: const Text('Set sleep goal and preferred sleep schedule'),
+            leading: const Icon(Icons.bedtime_outlined),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      SleepSettingsScreen(repository: SleepRepository()),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 24),
           // Account section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               'Account',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
           ListTile(

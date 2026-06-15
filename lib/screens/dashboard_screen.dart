@@ -25,6 +25,7 @@ import '../features/wellbeing/service/hydration_service.dart';
 import '../features/wellbeing/models/hydration_models.dart';
 import '../features/wellbeing/ui/wellbeing_prompt_screen.dart';
 import '../features/wellbeing/ui/breathwork_session.dart';
+import '../features/wellbeing/ui/sleep_dashboard_card.dart';
 
 class DashboardScreen extends StatefulWidget {
   final GoogleSignInAccount user;
@@ -230,7 +231,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ValueListenableBuilder<ThemeMode>(
               valueListenable: ThemeService().themeNotifier,
               builder: (context, themeMode, child) {
-                final isDark = themeMode == ThemeMode.dark ||
+                final isDark =
+                    themeMode == ThemeMode.dark ||
                     (themeMode == ThemeMode.system &&
                         MediaQuery.of(context).platformBrightness ==
                             Brightness.dark);
@@ -725,6 +727,8 @@ class _WellbeingTabState extends State<_WellbeingTab> {
                         _openHydrationSettings(summary.settings),
                   ),
                 const SizedBox(height: 12),
+                const SleepDashboardCard(),
+                const SizedBox(height: 12),
                 Card(
                   child: Column(
                     children: [
@@ -964,13 +968,19 @@ class _HydrationSettingsDialogState extends State<_HydrationSettingsDialog> {
   }
 
   Future<void> _pickStart() async {
-    final picked = await showTimePicker(context: context, initialTime: _startTime);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _startTime,
+    );
     if (picked == null) return;
     setState(() => _startTime = picked);
   }
 
   Future<void> _pickEnd() async {
-    final picked = await showTimePicker(context: context, initialTime: _endTime);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime,
+    );
     if (picked == null) return;
     setState(() => _endTime = picked);
   }
@@ -1047,8 +1057,7 @@ class _HydrationSettingsDialogState extends State<_HydrationSettingsDialog> {
                 max: 240,
                 divisions: 15,
                 label: '${_frequencyMinutes.round()} min',
-                onChanged: (value) =>
-                    setState(() => _frequencyMinutes = value),
+                onChanged: (value) => setState(() => _frequencyMinutes = value),
               ),
             ),
             SwitchListTile(
