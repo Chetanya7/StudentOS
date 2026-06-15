@@ -77,6 +77,7 @@ class SleepRepository {
     required DateTime date,
     required int sleepTime,
     required int wakeTime,
+    SleepSource source = SleepSource.manual,
   }) async {
     final normalizedDate = DateTime(date.year, date.month, date.day);
     final key = sleepDateKey(normalizedDate);
@@ -86,6 +87,7 @@ class SleepRepository {
       sleepTime: sleepTime,
       wakeTime: wakeTime,
       durationMinutes: calculateSleepDurationMinutes(sleepTime, wakeTime),
+      source: source,
     );
 
     final records = await getRecords();

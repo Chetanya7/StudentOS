@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../notification_reading/service/notification_service.dart';
+import '../models/activity_models.dart';
 import '../models/hydration_models.dart';
 import '../models/sleep_models.dart';
+import '../service/activity_repository.dart';
+import '../service/health_sync_manager.dart';
 import '../service/hydration_service.dart';
 import '../service/sleep_repository.dart';
 import '../service/wellbeing_service.dart';
+import 'activity_details_screen.dart';
 import 'breathwork_session.dart';
 import 'hydration_details_screen.dart';
 import 'sleep_details_screen.dart';
@@ -23,6 +27,7 @@ class WellbeingDashboard extends StatefulWidget {
 class _WellbeingDashboardState extends State<WellbeingDashboard> {
   late final HydrationService _hydrationService;
   late final SleepRepository _sleepRepository;
+  late final ActivityRepository _activityRepository;
   late Future<_DashboardSnapshot> _snapshotFuture;
 
   @override
@@ -32,28 +37,50 @@ class _WellbeingDashboardState extends State<WellbeingDashboard> {
       notificationService: widget.notificationService,
     );
     _sleepRepository = SleepRepository();
+    _activityRepository = ActivityRepository();
+    _performLaunchSyncAndLoad();
+  }
+
+  Future<void> _performLaunchSyncAndLoad() async {
+    // Perform app-launch sync (no-op if already done this session).
+    await HealthSyncManager.instance.performLaunchSync(
+      activityRepository: _activityRepository,
+      sleepRepository: _sleepRepository,
+    );
     _loadSnapshot();
   }
 
   void _loadSnapshot() {
     _snapshotFuture = _fetchSnapshot();
+    if (mounted) setState(() {});
   }
 
   Future<_DashboardSnapshot> _fetchSnapshot() async {
     final results = await Future.wait([
       _hydrationService.getSummary(),
       _sleepRepository.getDashboardData(),
+      _activityRepository.getDashboardData(),
     ]);
     return _DashboardSnapshot(
       hydration: results[0] as HydrationSummary,
       sleep: results[1] as SleepDashboardData,
+      activity: results[2] as ActivityDashboardData,
     );
   }
 
   void _refresh() {
     setState(() {
-      _loadSnapshot();
+      _snapshotFuture = _syncAndFetchSnapshot();
     });
+  }
+
+  Future<_DashboardSnapshot> _syncAndFetchSnapshot() async {
+    // Perform manual refresh sync.
+    await HealthSyncManager.instance.performManualSync(
+      activityRepository: _activityRepository,
+      sleepRepository: _sleepRepository,
+    );
+    return _fetchSnapshot();
   }
 
   Future<void> _addWater() async {
@@ -123,6 +150,20 @@ class _WellbeingDashboardState extends State<WellbeingDashboard> {
     });
   }
 
+  void _openActivityDetails(ActivityDashboardData data) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityDetailsScreen(
+          repository: _activityRepository,
+          initialData: data,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _refresh();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -169,6 +210,7 @@ class _WellbeingDashboardState extends State<WellbeingDashboard> {
                 _WellnessSnapshotCard(
                   sleep: data.sleep,
                   hydration: data.hydration,
+                  activity: data.activity,
                 ),
                 const SizedBox(height: 24),
                 // Section 2: Quick Actions
@@ -180,6 +222,11 @@ class _WellbeingDashboardState extends State<WellbeingDashboard> {
                 ),
                 const SizedBox(height: 24),
                 // Section 3: Health Summaries
+                _ActivitySummaryCard(
+                  data: data.activity,
+                  onViewDetails: () => _openActivityDetails(data.activity),
+                ),
+                const SizedBox(height: 16),
                 _SleepSummaryCard(
                   data: data.sleep,
                   onViewDetails: () => _openSleepDetails(data.sleep),
@@ -199,10 +246,15 @@ class _WellbeingDashboardState extends State<WellbeingDashboard> {
 }
 
 class _DashboardSnapshot {
-  const _DashboardSnapshot({required this.hydration, required this.sleep});
+  const _DashboardSnapshot({
+    required this.hydration,
+    required this.sleep,
+    required this.activity,
+  });
 
   final HydrationSummary hydration;
   final SleepDashboardData sleep;
+  final ActivityDashboardData activity;
 }
 
 // =============================================================================
@@ -210,10 +262,15 @@ class _DashboardSnapshot {
 // =============================================================================
 
 class _WellnessSnapshotCard extends StatelessWidget {
-  const _WellnessSnapshotCard({required this.sleep, required this.hydration});
+  const _WellnessSnapshotCard({
+    required this.sleep,
+    required this.hydration,
+    required this.activity,
+  });
 
   final SleepDashboardData sleep;
   final HydrationSummary hydration;
+  final ActivityDashboardData activity;
 
   @override
   Widget build(BuildContext context) {
@@ -226,16 +283,19 @@ class _WellnessSnapshotCard extends StatelessWidget {
     final currentLiters = hydration.today.amountMl / 1000;
     final hydrationText =
         '${currentLiters.toStringAsFixed(1)} / ${goalMlLiters.toStringAsFixed(1)} L';
+    final activityText = '${formatStepsWithComma(activity.todaySteps)} steps';
 
-    // Overall wellness score (simple average of sleep goal % + hydration %)
+    // Overall wellness score (simple average of sleep goal % + hydration % + activity %)
     final sleepGoalProgress = lastNight == null
         ? 0.0
         : (lastNight.durationMinutes / sleep.settings.sleepGoalMinutes)
               .clamp(0, 1)
               .toDouble();
     final hydrationProgress = hydration.progress;
-    final overallScore = ((sleepGoalProgress + hydrationProgress) / 2 * 100)
-        .round();
+    final activityProgress = activity.goalProgress;
+    final overallScore =
+        ((sleepGoalProgress + hydrationProgress + activityProgress) / 3 * 100)
+            .round();
 
     return Card(
       elevation: 0,
@@ -286,9 +346,9 @@ class _WellnessSnapshotCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _SnapshotMetric(
-                    emoji: '🙂',
-                    label: 'Mood',
-                    value: 'Check in →',
+                    emoji: '🚶',
+                    label: 'Activity',
+                    value: activityText,
                   ),
                 ),
                 Expanded(
@@ -461,6 +521,93 @@ class _ActionTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Section 3: Activity Summary Card
+// =============================================================================
+
+class _ActivitySummaryCard extends StatelessWidget {
+  const _ActivitySummaryCard({required this.data, required this.onViewDetails});
+
+  final ActivityDashboardData data;
+  final VoidCallback onViewDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final stepsText = formatStepsWithComma(data.todaySteps);
+    final scoreText = data.analytics.activityScore;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: InkWell(
+        onTap: onViewDetails,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    CircularProgressIndicator(
+                      value: data.goalProgress,
+                      strokeWidth: 4,
+                      backgroundColor: Colors.green.withValues(alpha: 0.1),
+                      color: Colors.green,
+                    ),
+                    const Center(
+                      child: Icon(
+                        Icons.directions_walk,
+                        size: 18,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Activity & Movement',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$stepsText steps today',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    Text(
+                      data.todaySteps > 0
+                          ? '${data.goalPercentage}% of goal • Score: $scoreText/100'
+                          : 'Log your steps to get started',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
             ],
           ),
         ),

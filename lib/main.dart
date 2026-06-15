@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'features/wellbeing/service/health_sync_manager.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_state_manager.dart';
 import 'services/theme_service.dart';
@@ -8,6 +9,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
   await ThemeService().initialize();
+  await HealthSyncManager.instance.initialize();
   runApp(const StudentOS());
 }
 

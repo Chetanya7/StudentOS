@@ -17,12 +17,20 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 	private val CHANNEL = "studentos/notification_service"
+	private val HC_CHANNEL = "studentos/health_connect"
 	private val ACADEMIC_ALERT_CHANNEL_ID = "academic_alerts"
 	private val PREFS = "studentos_prefs"
 	private val DONT_ASK_KEY = "notification_dont_ask"
 
+	private var healthConnectChannel: HealthConnectChannel? = null
+
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
 		super.configureFlutterEngine(flutterEngine)
+
+		// Register Health Connect channel
+		healthConnectChannel = HealthConnectChannel(this)
+		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, HC_CHANNEL)
+			.setMethodCallHandler(healthConnectChannel)
 
 		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
 			when (call.method) {
@@ -202,6 +210,12 @@ class MainActivity : FlutterActivity() {
 				else -> result.notImplemented()
 			}
 		}
+	}
+
+	@Deprecated("Deprecated in Java")
+	override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+		super.onActivityResult(requestCode, resultCode, data)
+		healthConnectChannel?.handleActivityResult(requestCode)
 	}
 
 	private fun hasNotificationListenerPermission(): Boolean {

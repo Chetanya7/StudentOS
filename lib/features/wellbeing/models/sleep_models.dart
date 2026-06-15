@@ -5,6 +5,7 @@ class SleepRecord {
     required this.sleepTime,
     required this.wakeTime,
     required this.durationMinutes,
+    this.source = SleepSource.manual,
   });
 
   final String id;
@@ -12,6 +13,7 @@ class SleepRecord {
   final int sleepTime;
   final int wakeTime;
   final int durationMinutes;
+  final SleepSource source;
 
   String get dateKey => sleepDateKey(date);
 
@@ -22,6 +24,7 @@ class SleepRecord {
       'sleepTime': sleepTime,
       'wakeTime': wakeTime,
       'durationMinutes': durationMinutes,
+      'source': source.name,
     };
   }
 
@@ -41,6 +44,7 @@ class SleepRecord {
         json['durationMinutes'],
         calculateSleepDurationMinutes(sleepTime, wakeTime),
       ),
+      source: _parseSleepSource(json['source']),
     );
   }
 
@@ -50,6 +54,7 @@ class SleepRecord {
     int? sleepTime,
     int? wakeTime,
     int? durationMinutes,
+    SleepSource? source,
   }) {
     return SleepRecord(
       id: id ?? this.id,
@@ -57,9 +62,13 @@ class SleepRecord {
       sleepTime: sleepTime ?? this.sleepTime,
       wakeTime: wakeTime ?? this.wakeTime,
       durationMinutes: durationMinutes ?? this.durationMinutes,
+      source: source ?? this.source,
     );
   }
 }
+
+/// Data source for a sleep record.
+enum SleepSource { manual, healthConnect, healthKit, imported }
 
 class SleepSettings {
   const SleepSettings({
@@ -203,4 +212,12 @@ int? _nullableMinutes(Object? value) {
   final parsed = _asInt(value, -1);
   if (parsed < 0) return null;
   return parsed.clamp(0, (24 * 60) - 1);
+}
+
+SleepSource _parseSleepSource(Object? value) {
+  final name = value?.toString() ?? '';
+  for (final source in SleepSource.values) {
+    if (source.name == name) return source;
+  }
+  return SleepSource.manual;
 }
