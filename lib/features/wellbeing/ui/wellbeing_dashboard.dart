@@ -38,21 +38,16 @@ class _WellbeingDashboardState extends State<WellbeingDashboard> {
     );
     _sleepRepository = SleepRepository();
     _activityRepository = ActivityRepository();
-    _performLaunchSyncAndLoad();
+    _snapshotFuture = _performLaunchSyncAndFetchSnapshot();
   }
 
-  Future<void> _performLaunchSyncAndLoad() async {
+  Future<_DashboardSnapshot> _performLaunchSyncAndFetchSnapshot() async {
     // Perform app-launch sync (no-op if already done this session).
     await HealthSyncManager.instance.performLaunchSync(
       activityRepository: _activityRepository,
       sleepRepository: _sleepRepository,
     );
-    _loadSnapshot();
-  }
-
-  void _loadSnapshot() {
-    _snapshotFuture = _fetchSnapshot();
-    if (mounted) setState(() {});
+    return _fetchSnapshot();
   }
 
   Future<_DashboardSnapshot> _fetchSnapshot() async {

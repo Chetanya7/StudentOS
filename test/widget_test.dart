@@ -28,12 +28,8 @@ void main() {
 
   testWidgets('shows login screen', (WidgetTester tester) async {
     await tester.pumpWidget(const StudentOS());
-<<<<<<< HEAD
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-=======
-    await tester.pump(const Duration(milliseconds: 300));
->>>>>>> cc9e190 (image upload handling handled)
 
     expect(find.text('StudentOS'), findsOneWidget);
     expect(find.text('Sign in with Google'), findsOneWidget);

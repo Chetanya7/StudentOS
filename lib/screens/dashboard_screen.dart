@@ -17,6 +17,7 @@ import '../features/financials/models/private_lending_entry.dart';
 import '../features/notification_reading/models/notification_extraction.dart';
 import '../features/notification_reading/service/notification_service.dart';
 import '../features/notification_reading/service/notification_ai_extraction_service.dart';
+import '../features/wellbeing/models/hydration_models.dart';
 import 'settings_screen.dart';
 import '../features/smart_scheduling/models/smart_schedule_recommendation.dart';
 import '../features/smart_scheduling/service/smart_schedule_service.dart';
@@ -230,8 +231,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ValueListenableBuilder<ThemeMode>(
               valueListenable: ThemeService().themeNotifier,
               builder: (context, themeMode, child) {
-                final isDark =
-                    themeMode == ThemeMode.dark ||
                 final isDark =
                     themeMode == ThemeMode.dark ||
                     (themeMode == ThemeMode.system &&
