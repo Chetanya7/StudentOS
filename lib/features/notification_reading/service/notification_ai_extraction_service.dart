@@ -1,10 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 
-import '../../../services/hugging_face_config.dart';
+import '../../../services/backend_ai_service.dart';
 import '../models/notification_extraction.dart';
 import '../models/notification_llm_input.dart';
 import 'notification_prompt_builder.dart';
@@ -15,49 +13,20 @@ class NotificationAiExtractionService {
   });
 
   final NotificationPromptBuilder promptBuilder;
+  static const BackendAiService _backendAiService = BackendAiService();
 
   Future<NotificationExtractionResult> extract(
     NotificationLlmInputPayload payload,
   ) async {
-    final env = _loadedEnv();
-    final modelId = HuggingFaceConfig.modelId(env['HF_MODEL_URL'] ?? '');
-    final token = env['HF_TOKEN']?.trim() ?? '';
-
-    if (modelId == null || token.isEmpty) {
-      return _other('AI model is not configured.');
-    }
-
     final prompt = promptBuilder.buildStrictExtractionPrompt(payload);
     debugPrint('Notification extraction prompt:\n$prompt');
 
     try {
-      final response = await http
-          .post(
-            HuggingFaceConfig.chatCompletionsUri,
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'model': '$modelId:fastest',
-              'messages': [
-                {'role': 'user', 'content': prompt},
-              ],
-              'max_tokens': 700,
-              'temperature': 0.1,
-              'stream': false,
-            }),
-          )
-          .timeout(const Duration(seconds: 25));
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          'Notification extraction failed: ${response.statusCode} ${response.body}',
-        );
-        return _other('AI request failed.');
-      }
-
-      final generatedText = _extractGeneratedText(response.body);
+      final generatedText = await _backendAiService.postText(
+        '/ai/notification/extract',
+        {'payload': payload.toPromptJson()},
+        timeout: const Duration(seconds: 90),
+      );
       if (generatedText == null || generatedText.trim().isEmpty) {
         return _other('AI returned an empty response.');
       }
@@ -144,39 +113,12 @@ class NotificationAiExtractionService {
     return (start, end.isAfter(start) ? end : end.add(const Duration(days: 1)));
   }
 
-  Map<String, String> _loadedEnv() {
-    try {
-      return dotenv.env;
-    } catch (_) {
-      return const {};
-    }
-  }
-
   NotificationExtractionResult _other(String reason) {
     return NotificationExtractionResult(
       type: NotificationExtractionType.other,
       isRepeating: false,
       nonEventReason: reason,
     );
-  }
-
-  String? _extractGeneratedText(String responseBody) {
-    final decoded = jsonDecode(responseBody);
-
-    if (decoded is Map) {
-      final choices = decoded['choices'];
-      if (choices is List && choices.isNotEmpty) {
-        final first = choices.first;
-        if (first is Map) {
-          final message = first['message'];
-          if (message is Map && message['content'] != null) {
-            return message['content'].toString();
-          }
-        }
-      }
-    }
-
-    return null;
   }
 
   String _extractJsonObject(String text) {
